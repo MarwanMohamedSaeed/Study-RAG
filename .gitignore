@@ -1,0 +1,9 @@
+.venv/
+data/
+.env
+__pycache__/
+.pytest_cache/
+*.pyc
+# local tooling / personal drafts
+.claude/
+docs/linkedin_post.md
