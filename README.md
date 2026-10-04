@@ -57,8 +57,6 @@ All of it runs locally, so your course material never leaves your machine. 🔐
 |:-:|:-:|:-:|
 | ![Chat](docs/chat.png) | ![Quiz](docs/quiz.png) | ![Results](docs/results.png) |
 
-<!-- 🎥 [Watch the 1-minute demo](https://youtu.be/YOUR_VIDEO) -->
-
 ---
 
 ## 🚀 Quick start
@@ -73,8 +71,8 @@ All of it runs locally, so your course material never leaves your machine. 🔐
 
 ```bash
 # 1️⃣ Clone the repository
-git clone https://github.com/[YOUR-USERNAME]/studyrag.git
-cd studyrag
+git clone https://github.com/MarwanMohamedSaeed/Study-RAG.git
+cd Study-RAG
 
 # 2️⃣ Create a virtual environment and install dependencies
 python -m venv .venv
@@ -305,14 +303,12 @@ Contributions are welcome! 🎉
 
 ## 🙏 Acknowledgments
 
-This project was built during my internship at **[COMPANY NAME]** 🏢. Special thanks to **[MENTOR NAME]** for the guidance and feedback throughout.
-
 Powered by [Streamlit](https://streamlit.io/) · [PyMuPDF](https://pymupdf.readthedocs.io/) · [sentence-transformers](https://www.sbert.net/) · [ChromaDB](https://www.trychroma.com/) · [Pydantic](https://docs.pydantic.dev/) · [Ollama](https://ollama.com/) · [Qwen](https://github.com/QwenLM/Qwen3)
 
 ## 📄 License
 
 Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
-© [YEAR] [YOUR NAME]
+© 2026 Marwan Mohamed Saeed
 
 ---
 
@@ -320,11 +316,11 @@ Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
 
 ## 👤 Author
 
-**[YOUR NAME]**
+**Marwan Mohamed Saeed**
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/[YOUR-LINKEDIN]/)
-[![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?logo=github&logoColor=white)](https://github.com/[YOUR-USERNAME])
-[![Email](https://img.shields.io/badge/Email-Contact-EA4335?logo=gmail&logoColor=white)](mailto:[YOUR-EMAIL])
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/marwanmohamedsaeed/)
+[![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?logo=github&logoColor=white)](https://github.com/MarwanMohamedSaeed)
+[![Email](https://img.shields.io/badge/Email-Contact-EA4335?logo=gmail&logoColor=white)](mailto:marwanmohamedsaid23@gmail.com)
 
 ⭐ **If StudyRAG helps you study, please give it a star!** ⭐
 
