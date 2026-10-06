@@ -1,0 +1,12 @@
+[
+  {"question": "How many bytes is the UDP header?", "answer": "8 bytes", "page": 3},
+  {"question": "Which port number does HTTPS use?", "answer": "443", "page": 2},
+  {"question": "What does a SYN flood attack do and what is the standard defence?", "answer": "Sends many SYNs without completing the handshake; SYN cookies", "page": 5},
+  {"question": "What triggers a TCP fast retransmit?", "answer": "Three duplicate ACKs", "page": 4},
+  {"question": "How does the sender know how much free buffer space the receiver has?", "answer": "The receive window field (rwnd)", "page": 6},
+  {"question": "What happens to cwnd during slow start?", "answer": "Starts at 1 MSS and doubles every RTT until ssthresh", "page": 7},
+  {"question": "Which congestion control algorithm is the default in Linux?", "answer": "TCP CUBIC", "page": 7},
+  {"question": "Which socket type is used to create a UDP socket in Python?", "answer": "SOCK_DGRAM", "page": 9},
+  {"question": "How is a TCP socket identified compared with a UDP socket?", "answer": "TCP: four-tuple; UDP: two-tuple", "page": 2},
+  {"question": "متى يجب أن أستخدم UDP بدلاً من TCP؟", "answer": "عندما يكون التأخير المنخفض أهم من فقدان بعض الحزم", "page": 10}
+]

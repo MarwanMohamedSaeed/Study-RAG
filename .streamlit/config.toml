@@ -1,0 +1,7 @@
+[server]
+# The file watcher crawls torch/transformers modules and logs spurious import errors.
+fileWatcherType = "none"
+maxUploadSize = 200
+
+[browser]
+gatherUsageStats = false

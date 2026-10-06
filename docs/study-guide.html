@@ -1,0 +1,984 @@
+<title>StudyRAG Study Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: textbook page. Sticky chapter rail on the left (desktop), one reading column (~70ch).
+   Key terms are marked like a highlighter pen, because this is a study guide. */
+:root {
+  --paper: #F6F7F9;
+  --card: #FFFFFF;
+  --ink: #1A1F2B;
+  --muted: #5B6475;
+  --rule: #DDE1E8;
+  --accent: #3346C4;
+  --accent-soft: #E7EAFB;
+  --hl: #FFE27A;
+  --code-bg: #EEF0F4;
+  --ok: #1F7A50;
+  --ok-soft: #E3F4EC;
+  --bad: #B83A33;
+  --bad-soft: #FBE9E7;
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --f-mono: "JetBrains Mono", Consolas, "Courier New", monospace;
+  --f-ui: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #11141A; --card: #171B23; --ink: #E5E8EE; --muted: #9AA3B4; --rule: #2A303B;
+    --accent: #93A0FF; --accent-soft: #1F2440; --hl: rgba(255, 210, 80, .30); --code-bg: #1B2029;
+    --ok: #5CC995; --ok-soft: #14291F; --bad: #F08A80; --bad-soft: #301816; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #11141A; --card: #171B23; --ink: #E5E8EE; --muted: #9AA3B4; --rule: #2A303B;
+  --accent: #93A0FF; --accent-soft: #1F2440; --hl: rgba(255, 210, 80, .30); --code-bg: #1B2029;
+  --ok: #5CC995; --ok-soft: #14291F; --bad: #F08A80; --bad-soft: #301816; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 17px; line-height: 1.65; margin: 0; }
+.shell { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 48px; max-width: 1180px; margin: 0 auto; padding-inline: 24px; padding-block: 32px 80px; }
+@media (max-width: 920px) { .shell { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-inline: 16px; } }
+
+/* ---------- chapter rail ---------- */
+.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; max-height: calc(100vh - 48px); overflow-y: auto; font-family: var(--f-ui); font-size: 14px; }
+@media (max-width: 920px) { .rail { position: static; max-height: none; } }
+.rail details { border: 1px solid var(--rule); border-radius: 10px; background: var(--card); padding: 14px 16px; }
+.rail summary { font-weight: 700; cursor: pointer; list-style: none; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.rail summary::-webkit-details-marker { display: none; }
+.progress { height: 6px; background: var(--rule); border-radius: 3px; margin-block: 10px 6px; overflow: hidden; }
+.progress > span { display: block; height: 100%; width: 0; background: var(--ok); transition: width .3s; }
+.progress-label { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.rail ol { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 2px; counter-reset: ch; }
+.rail li a { display: grid; grid-template-columns: 24px 1fr 16px; gap: 6px; padding: 5px 6px; border-radius: 6px; color: var(--ink); text-decoration: none; line-height: 1.3; }
+.rail li a::before { counter-increment: ch; content: counter(ch, decimal-leading-zero); color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; padding-top: 1px; }
+.rail li a:hover, .rail li a:focus-visible { background: var(--accent-soft); outline: none; }
+.rail li a .tick { color: var(--ok); font-weight: 700; visibility: hidden; }
+.rail li a.done .tick { visibility: visible; }
+
+/* ---------- reading column ---------- */
+main { min-width: 0; max-width: 760px; }
+h1, h2, h3, h4 { font-family: var(--f-display); text-wrap: balance; line-height: 1.2; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.3rem); margin: 0 0 12px; letter-spacing: -.02em; }
+h2 { font-size: 1.85rem; margin: 0 0 6px; letter-spacing: -.01em; }
+h3 { font-size: 1.25rem; margin: 34px 0 8px; }
+h4 { font-size: 1.05rem; margin: 22px 0 6px; }
+p { margin: 0 0 14px; }
+a { color: var(--accent); }
+.lede { font-size: 1.2rem; color: var(--muted); max-width: 62ch; }
+.eyebrow { font-family: var(--f-ui); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+.hl { background: linear-gradient(transparent 52%, var(--hl) 52%, var(--hl) 92%, transparent 92%); padding-inline: 1px; }
+code { font-family: var(--f-mono); font-size: .86em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre { font-family: var(--f-mono); font-size: 13.5px; line-height: 1.55; background: var(--code-bg); border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 0 0 16px; border: 1px solid var(--rule); }
+pre code { background: none; padding: 0; font-size: inherit; }
+pre .c { color: var(--muted); font-style: italic; }
+.file { font-family: var(--f-mono); font-size: 12px; color: var(--muted); margin: 18px 0 4px; }
+ul, ol { padding-left: 1.3em; margin: 0 0 14px; }
+li { margin-bottom: 4px; }
+hr { border: none; border-top: 1px solid var(--rule); margin: 56px 0; }
+
+section.chapter { scroll-margin-top: 24px; }
+.ch-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; border-bottom: 2px solid var(--ink); padding-bottom: 10px; margin-bottom: 22px; }
+.ch-head > div { min-width: 0; }
+.studied { font-family: var(--f-ui); font-size: 13px; display: inline-flex; align-items: center; gap: 8px; color: var(--muted); cursor: pointer; user-select: none; white-space: nowrap; }
+.studied input { width: 18px; height: 18px; accent-color: var(--ok); cursor: pointer; }
+
+/* hero */
+.hero { padding-block: 8px 28px; }
+.hero-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 24px; font-family: var(--f-ui); }
+.fact { border-top: 2px solid var(--accent); padding-top: 8px; }
+.fact b { display: block; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.fact span { font-size: 13px; color: var(--muted); }
+
+/* callouts */
+.note, .why, .warn { border-left: 4px solid var(--accent); background: var(--card); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 18px 0; }
+.note b:first-child, .why b:first-child, .warn b:first-child { font-family: var(--f-ui); }
+.why { border-left-color: var(--ok); }
+.warn { border-left-color: var(--bad); }
+.analogy { font-style: italic; color: var(--muted); }
+
+/* tables */
+.tbl { overflow-x: auto; margin: 0 0 18px; border: 1px solid var(--rule); border-radius: 8px; background: var(--card); }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--f-ui); font-size: 12.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); background: var(--paper); }
+tr:last-child td { border-bottom: none; }
+td code { white-space: nowrap; }
+
+/* concept cards */
+.concepts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 18px 0; }
+.concept { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.concept h4 { margin: 0 0 6px; }
+.concept p { font-size: 15.5px; margin: 0 0 8px; }
+.concept p:last-child { margin: 0; }
+
+/* steps */
+.steps { list-style: none; padding: 0; counter-reset: st; display: grid; gap: 12px; margin: 18px 0; }
+.steps > li { counter-increment: st; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; margin: 0; }
+.steps > li::before { content: counter(st); font-family: var(--f-display); font-weight: 700; width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: var(--paper); display: grid; place-items: center; font-size: 14px; }
+.steps > li > div { min-width: 0; }
+.steps b { font-family: var(--f-ui); }
+
+/* mermaid */
+.diagram { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; margin: 18px 0; overflow-x: auto; }
+.diagram pre.mermaid { background: none; border: none; padding: 0; margin: 0; text-align: center; font-family: var(--f-ui); }
+.caption { font-family: var(--f-ui); font-size: 13px; color: var(--muted); margin-top: 8px; }
+
+/* bug cards */
+.bug { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; margin: 14px 0; }
+.bug h4 { margin: 0 0 8px; }
+.bug dl { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 4px 12px; margin: 0; font-size: 15.5px; }
+.bug dt { font-family: var(--f-ui); font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding-top: 3px; }
+.bug dd { margin: 0; min-width: 0; }
+@media (max-width: 520px) { .bug dl { grid-template-columns: minmax(0, 1fr); } .bug dt { padding-top: 8px; } }
+
+/* self-test */
+.qa { border: 1px solid var(--rule); border-radius: 10px; background: var(--card); margin: 10px 0; }
+.qa summary { cursor: pointer; padding: 12px 16px; font-family: var(--f-ui); font-weight: 600; list-style: none; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; }
+.qa summary::-webkit-details-marker { display: none; }
+.qa summary::before { content: "?"; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--accent); color: var(--accent); display: grid; place-items: center; font-size: 13px; }
+.qa[open] summary::before { content: "✓"; background: var(--accent); color: var(--paper); }
+.qa summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 10px; }
+.qa .ans { padding: 0 16px 14px 50px; font-size: 15.5px; }
+.qa .ans p:last-child { margin: 0; }
+
+/* playground */
+.play { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; margin: 18px 0; }
+.play label { font-family: var(--f-ui); font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px; }
+.play textarea { width: 100%; min-height: 150px; font-family: var(--f-mono); font-size: 13px; background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; padding: 10px; resize: vertical; }
+.play textarea:focus-visible, .play input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin: 12px 0; }
+.controls input[type=range] { width: 100%; accent-color: var(--accent); }
+.controls output { font-family: var(--f-mono); font-size: 13px; color: var(--accent); }
+.chunk-summary { font-family: var(--f-ui); font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+.chunks { display: grid; gap: 8px; }
+.chunk { border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; background: var(--paper); min-width: 0; }
+.chunk .meta { font-family: var(--f-ui); font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+.chunk .txt { font-family: var(--f-mono); font-size: 12.5px; white-space: pre-wrap; word-break: break-word; }
+.chunk mark { background: var(--hl); color: inherit; border-radius: 2px; }
+
+/* glossary */
+.gloss { display: grid; grid-template-columns: minmax(130px, 200px) minmax(0, 1fr); gap: 8px 18px; font-size: 15.5px; }
+.gloss dt { font-family: var(--f-ui); font-weight: 700; }
+.gloss dd { margin: 0; }
+@media (max-width: 520px) { .gloss { grid-template-columns: minmax(0, 1fr); } .gloss dd { margin-bottom: 8px; } }
+
+.pill { display: inline-block; font-family: var(--f-ui); font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+footer { font-family: var(--f-ui); font-size: 13px; color: var(--muted); margin-top: 64px; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+html { scroll-behavior: smooth; }
+</style>
+
+<div class="shell">
+
+<nav class="rail" aria-label="Chapters">
+  <details id="railbox" open>
+    <summary><span>Chapters</span><span class="progress-label" id="progLabel">0 / 13 studied</span></summary>
+    <div class="progress" aria-hidden="true"><span id="progBar"></span></div>
+    <ol id="toc">
+      <li><a href="#big-picture">The big picture<span class="tick">✓</span></a></li>
+      <li><a href="#concepts">Core AI concepts<span class="tick">✓</span></a></li>
+      <li><a href="#stack">Tech stack &amp; files<span class="tick">✓</span></a></li>
+      <li><a href="#ingestion">Ingestion<span class="tick">✓</span></a></li>
+      <li><a href="#retrieval">Retrieval<span class="tick">✓</span></a></li>
+      <li><a href="#rag">RAG Q&amp;A<span class="tick">✓</span></a></li>
+      <li><a href="#mcq">MCQ generator<span class="tick">✓</span></a></li>
+      <li><a href="#llm">The LLM wrapper<span class="tick">✓</span></a></li>
+      <li><a href="#app">The Streamlit app<span class="tick">✓</span></a></li>
+      <li><a href="#export">Export<span class="tick">✓</span></a></li>
+      <li><a href="#testing">Tests &amp; evaluation<span class="tick">✓</span></a></li>
+      <li><a href="#lessons">Bugs we fixed<span class="tick">✓</span></a></li>
+      <li><a href="#selftest">Self-test &amp; glossary<span class="tick">✓</span></a></li>
+    </ol>
+  </details>
+</nav>
+
+<main>
+
+<header class="hero">
+  <div class="eyebrow">Study guide · StudyRAG</div>
+  <h1>How StudyRAG works, end to end</h1>
+  <p class="lede">A chapter-by-chapter explanation of every part of the project: the AI ideas behind it, what each file does, why each design decision was made, and the real bugs we hit while building it. Read it in order the first time, then use the self-test to check yourself.</p>
+  <div class="hero-facts">
+    <div class="fact"><b>2</b><span>features sharing one pipeline</span></div>
+    <div class="fact"><b>9</b><span>modules in <code>core/</code></span></div>
+    <div class="fact"><b>43</b><span>automated tests</span></div>
+    <div class="fact"><b>10/10</b><span>retrieval hits on the sample eval</span></div>
+  </div>
+</header>
+
+<!-- ============================================================ 1 -->
+<section class="chapter" id="big-picture" data-ch="big-picture">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 1</div><h2>The big picture</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="big-picture"> Mark as studied</label></div>
+
+  <p>StudyRAG solves one problem: a student has lecture PDFs and wants to <b>understand</b> them and <b>test themselves</b> on them. So the app has two features:</p>
+  <ul>
+    <li><b>Ask the material</b>: you ask a question and get an answer taken only from your slides, with the page number it came from.</li>
+    <li><b>MCQ quiz</b>: the app writes multiple-choice questions from your slides, checks them, lets you take the quiz, and exports it.</li>
+  </ul>
+  <p>Both features need the same thing first: the PDF has to be turned into small searchable pieces. That shared step is called <span class="hl">ingestion</span>, and the place the pieces are stored is the <span class="hl">vector store</span>. Everything else is built on top of it.</p>
+
+  <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  PDF["Lecture PDF"] --> ING["Ingestion<br/>read, split, embed"]
+  ING --> DB[("Vector store<br/>ChromaDB")]
+  DB --> RAG["Ask the material<br/>retrieve + answer"]
+  DB --> MCQ["MCQ quiz<br/>retrieve + write + check"]
+  RAG --> LLM["LLM<br/>Ollama or Claude"]
+  MCQ --> LLM
+</pre>
+    <div class="caption">One ingestion pipeline and one vector store serve both features. The LLM is only called at the end.</div>
+  </div>
+
+  <h3>What happens when you use the app</h3>
+  <ol class="steps">
+    <li><div><b>Upload.</b> The PDF is read page by page, cut into chunks of about 800 characters, each chunk is turned into a list of numbers (an embedding), and everything is saved in ChromaDB together with the file name and page number.</div></li>
+    <li><div><b>Ask.</b> Your question is turned into an embedding too. ChromaDB finds the 5 chunks whose embeddings are closest to it. Those chunks, plus strict instructions, are sent to the LLM, which writes an answer and cites the pages.</div></li>
+    <li><div><b>Quiz.</b> The app picks chunks (by topic, or spread across the lecture), asks the LLM to write questions as JSON, validates them, removes duplicates, checks every answer key, and shows you the quiz.</div></li>
+  </ol>
+
+  <div class="why"><b>Key idea.</b> The LLM never "reads the whole PDF". It only sees the few chunks we retrieve. That is what keeps answers grounded in your material, and it is also why retrieval quality matters so much.</div>
+</section>
+
+<hr>
+
+<!-- ============================================================ 2 -->
+<section class="chapter" id="concepts" data-ch="concepts">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 2</div><h2>Core AI concepts</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="concepts"> Mark as studied</label></div>
+
+  <p>You need eight ideas to understand the rest of the guide. Each card gives the plain definition and how StudyRAG uses it.</p>
+
+  <div class="concepts">
+    <div class="concept"><h4>LLM</h4>
+      <p>A Large Language Model predicts the next piece of text. Give it instructions and context, and it writes a continuation: an answer, a list of questions, JSON.</p>
+      <p><b>Here:</b> <code>qwen3:4b-instruct</code> through Ollama (local), or Claude through its API.</p></div>
+    <div class="concept"><h4>Hallucination</h4>
+      <p>When an LLM states something confidently that is not true or not in its source. Small models do it more.</p>
+      <p><b>Here:</b> we fight it by giving the model only retrieved text and telling it to refuse when the answer is missing.</p></div>
+    <div class="concept"><h4>RAG</h4>
+      <p>Retrieval-Augmented Generation: first <i>retrieve</i> relevant text, then <i>generate</i> an answer from it. The model works like an open-book exam instead of from memory.</p>
+      <p><b>Here:</b> the whole "Ask the material" tab.</p></div>
+    <div class="concept"><h4>Embedding</h4>
+      <p>A list of numbers (384 for our model) that represents the <i>meaning</i> of a text. Texts with similar meaning get similar numbers, even in different languages.</p>
+      <p class="analogy">Like GPS coordinates for meaning: "UDP header size" and "حجم رأس UDP" land close together.</p></div>
+    <div class="concept"><h4>Cosine similarity</h4>
+      <p>How we measure "close". It compares the direction of two embeddings: 1 means same meaning, around 0.7 for unrelated text with this model.</p>
+      <p><b>Here:</b> ChromaDB is created with <code>hnsw:space = cosine</code>; we show it as the "similarity" score in Sources.</p></div>
+    <div class="concept"><h4>Vector store</h4>
+      <p>A database that stores embeddings and can quickly find the nearest ones to a query embedding.</p>
+      <p><b>Here:</b> ChromaDB, saved on disk in <code>data/chroma</code>, one collection per PDF.</p></div>
+    <div class="concept"><h4>Chunking</h4>
+      <p>Cutting a long document into small pieces before embedding. Too big and the meaning gets blurred; too small and the context is lost.</p>
+      <p><b>Here:</b> ~800 characters with 150 characters of overlap, never crossing a page.</p></div>
+    <div class="concept"><h4>Structured output</h4>
+      <p>Making the LLM answer in a fixed format (JSON with known fields) so code can read it. Then we <i>validate</i> it, because models still make mistakes.</p>
+      <p><b>Here:</b> Ollama's <code>format</code> option plus Pydantic models in <code>schemas.py</code>.</p></div>
+  </div>
+
+  <h3>A tiny cosine example</h3>
+  <p>Imagine embeddings with only 2 numbers. A = (0.8, 0.6) for "UDP header is 8 bytes", B = (0.6, 0.8) for "size of the UDP header", C = (−0.6, 0.8) for "the three-way handshake".</p>
+  <pre><code>cos(A, B) = 0.8·0.6 + 0.6·0.8 = 0.96   <span class="c"># very similar</span>
+cos(A, C) = 0.8·(−0.6) + 0.6·0.8 = 0.00 <span class="c"># unrelated</span></code></pre>
+  <p>When vectors are <span class="hl">normalized</span> (length 1), cosine similarity is just the dot product. That's why the code always passes <code>normalize_embeddings=True</code>: it makes the comparison fast and fair.</p>
+
+  <h3>Temperature</h3>
+  <p>Temperature controls randomness. 0 means "always pick the most likely word" (repeatable); higher values mean more variety. We use <b>0.2</b> for answers (factual), <b>0.4</b> for writing questions (some variety), and <b>0.0</b> for checking answers (we want the most consistent judgment).</p>
+</section>
+
+<hr>
+
+<!-- ============================================================ 3 -->
+<section class="chapter" id="stack" data-ch="stack">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 3</div><h2>Tech stack &amp; project files</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="stack"> Mark as studied</label></div>
+
+  <h3>Libraries and why each was chosen</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Library</th><th>Job</th><th>Why this one</th></tr></thead>
+    <tbody>
+      <tr><td><b>Streamlit</b></td><td>The web UI</td><td>A whole interactive app in pure Python, no HTML/JS. Perfect for a data/AI tool.</td></tr>
+      <tr><td><b>PyMuPDF</b></td><td>Read PDFs</td><td>Fast, gives text per page (we need page numbers), and can also <i>write</i> PDFs, which we reuse for the quiz export.</td></tr>
+      <tr><td><b>sentence-transformers</b></td><td>Run the embedding model</td><td>Simple API to run Hugging Face embedding models locally on the CPU.</td></tr>
+      <tr><td><b>multilingual-e5-small</b></td><td>The embedding model</td><td>Small (~470 MB), runs on CPU, and puts Arabic and English in the same vector space.</td></tr>
+      <tr><td><b>ChromaDB</b></td><td>Vector store</td><td>Embedded (no server to run), persists to disk, supports metadata filters like "page between 2 and 4".</td></tr>
+      <tr><td><b>Pydantic</b></td><td>Validate LLM output</td><td>Declare the shape of an MCQ once; it rejects anything that doesn't fit and tells us why.</td></tr>
+      <tr><td><b>Ollama</b></td><td>Run the LLM locally</td><td>Free, private, uses the GPU, and supports JSON-schema constrained output.</td></tr>
+      <tr><td><b>anthropic</b></td><td>Optional Claude API</td><td>Best quality when you don't need everything to be local.</td></tr>
+      <tr><td><b>pytest</b></td><td>Tests</td><td>The standard Python test runner.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><b>No LangChain.</b> The brief asked to avoid heavy frameworks. Every step here is a few lines of plain Python, which makes it easier to understand, debug and explain in an interview.</div>
+
+  <h3>The files and how they depend on each other</h3>
+  <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  APP["app.py<br/>Streamlit UI"] --> RAG["rag.py"]
+  APP --> MCQ["mcq.py"]
+  APP --> ING["ingest.py"]
+  APP --> EXP["export.py"]
+  RAG --> RET["retriever.py"]
+  MCQ --> RET
+  RET --> ING
+  RAG --> LLM["llm.py"]
+  MCQ --> LLM
+  RAG --> PR["prompts.py"]
+  MCQ --> PR
+  MCQ --> SCH["schemas.py"]
+  EXP --> SCH
+  ING --> CFG["config.py"]
+  LLM --> CFG
+</pre>
+    <div class="caption">Arrows mean "imports". <code>config.py</code> sits at the bottom; <code>app.py</code> at the top only wires things together.</div>
+  </div>
+
+  <div class="tbl"><table>
+    <thead><tr><th>File</th><th>Responsibility</th></tr></thead>
+    <tbody>
+      <tr><td><code>app.py</code></td><td>The Streamlit page: sidebar (upload, document picker, LLM status), the Ask tab and the Quiz tab.</td></tr>
+      <tr><td><code>core/config.py</code></td><td>Reads <code>.env</code> and exposes settings (provider, model, chunk size, top-k, DB folder).</td></tr>
+      <tr><td><code>core/ingest.py</code></td><td>PDF → page text → chunks → embeddings → ChromaDB. Also lists and deletes documents.</td></tr>
+      <tr><td><code>core/retriever.py</code></td><td>Find the top-k chunks for a query, filter by page, or sample chunks evenly.</td></tr>
+      <tr><td><code>core/rag.py</code></td><td>The Q&amp;A pipeline: language detection, chat history, prompt building, refusal detection.</td></tr>
+      <tr><td><code>core/mcq.py</code></td><td>The quiz pipeline: chunk selection, generation, validation, de-dup, verification, page attribution.</td></tr>
+      <tr><td><code>core/llm.py</code></td><td>One interface for Ollama / Claude / fake: <code>generate()</code>, <code>stream()</code>, <code>health()</code>.</td></tr>
+      <tr><td><code>core/schemas.py</code></td><td>The <code>MCQ</code> Pydantic model with all its rules, and the JSON schemas sent to the LLM.</td></tr>
+      <tr><td><code>core/prompts.py</code></td><td>Every prompt in one file, with comments explaining each rule.</td></tr>
+      <tr><td><code>core/export.py</code></td><td>Quiz to JSON, Markdown and PDF.</td></tr>
+      <tr><td><code>tests/</code>, <code>eval/</code></td><td>Unit tests (no LLM needed) and the retrieval evaluation script.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<hr>
+
+<!-- ============================================================ 4 -->
+<section class="chapter" id="ingestion" data-ch="ingestion">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 4 · core/ingest.py</div><h2>Ingestion: from PDF to vectors</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="ingestion"> Mark as studied</label></div>
+
+  <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  A["PDF bytes"] --> B["extract_pages<br/>text per page + NFKC"]
+  B --> C{"page has<br/>30+ chars?"}
+  C -- no --> E["record as empty page<br/>(probably scanned)"]
+  C -- yes --> D["split_text<br/>~800 chars, 150 overlap"]
+  D --> F["embed_passages<br/>'passage: ' prefix"]
+  F --> G[("Chroma collection<br/>doc_ + sha1 of file")]
+</pre>
+  </div>
+
+  <h3>Step 1: extract text page by page</h3>
+  <div class="file">core/ingest.py · extract_pages</div>
+<pre><code>with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+    return [(i + 1, unicodedata.normalize("NFKC", page.get_text("text")))
+            for i, page in enumerate(doc)]</code></pre>
+  <p>We keep a list of <code>(page_number, text)</code> pairs. Page numbers start at 1 because that's what a student sees in their PDF viewer.</p>
+  <p><span class="hl">NFKC normalization</span> is there because of a real bug. Many PDFs store Arabic as "presentation forms": special codes for the shape a letter takes at the start, middle or end of a word (for example U+FEE3 instead of the normal letter م). They look identical on screen but are different characters, so the embedding model didn't recognize them and Arabic search failed. NFKC converts them back to normal letters. It also turns ligatures like "ﬁ" into "fi".</p>
+
+  <h3>Step 2: detect empty or scanned pages</h3>
+  <p>A page with fewer than 30 characters of text (<code>MIN_PAGE_CHARS</code>) is recorded as empty. Scanned PDFs are just images, so they have no text at all. <code>IngestResult.warning</code> turns this into a clear message: no text at all means "run OCR first"; half the pages empty means "only the text pages were indexed".</p>
+
+  <h3>Step 3: chunk each page</h3>
+  <p>We chunk <b>page by page</b>, never across pages. That way every chunk belongs to exactly one page, so citations are always exact. The cost is that a sentence split across two pages is split in the index too; we accepted that trade-off because exact page citations matter more for studying.</p>
+  <p>The splitter is <span class="hl">recursive</span>: it tries to cut at the biggest natural boundary first, and only uses a smaller one if a piece is still too long.</p>
+<pre><code>SEPARATORS = ["\n\n", "\n", ". ", "? ", "! ", "؟ ", "، ", "; ", " ", ""]
+<span class="c">#              paragraph → line → sentence (incl. Arabic ؟ and ،) → word → characters</span></code></pre>
+  <ol class="steps">
+    <li><div><b>Split.</b> <code>_split_recursive</code> splits on the first separator that appears in the text. Any piece still longer than 800 characters is split again with the next, smaller separator. <code>""</code> is the last resort: a hard cut every 800 characters.</div></li>
+    <li><div><b>Merge.</b> <code>_merge</code> glues the small pieces back together into chunks of up to 800 characters. When a chunk is full, it keeps the last ~150 characters and starts the next chunk with them. That shared text is the <span class="hl">overlap</span>.</div></li>
+    <li><div><b>Clean.</b> Chunks shorter than 20 characters (like a lone page number) are dropped.</div></li>
+  </ol>
+  <div class="why"><b>Why overlap?</b> If a key sentence sits right at a cut, without overlap half of it would be in one chunk and half in the next, and neither would match a question well. With overlap, the boundary text appears in both chunks.</div>
+
+  <h3>Try it: chunking playground</h3>
+  <p>This is the same algorithm as <code>split_text</code>, ported to JavaScript. Change the size and overlap and watch the chunks change. Highlighted text at the start of a chunk is the overlap carried over from the previous one.</p>
+  <div class="play">
+    <label for="pgText">Text to chunk (page 3 of the sample lecture)</label>
+    <textarea id="pgText">UDP is a connectionless, best-effort transport protocol defined in RFC 768. There is no handshake before sending data, no retransmission of lost segments, and no guarantee of ordering. The UDP header is only 8 bytes long and contains four fields: source port, destination port, length and checksum.
+
+Why would anyone use an unreliable protocol? UDP has no connection setup delay, keeps no connection state on the server, has a small header overhead, and is not slowed down by congestion control. These properties make it a good fit for DNS queries, live video and voice streaming, online games and SNMP. Applications that need reliability over UDP must implement it themselves; QUIC, the protocol behind HTTP/3, is a modern example that builds reliable, encrypted streams on top of UDP.
+
+The UDP checksum is computed as the one's complement of the one's complement sum of all 16-bit words in the segment, and it is used to detect bit errors.</textarea>
+    <div class="controls">
+      <div><label for="pgSize">Chunk size: <output id="pgSizeOut">300</output> chars</label><input type="range" id="pgSize" min="100" max="1000" step="10" value="300"></div>
+      <div><label for="pgOverlap">Overlap: <output id="pgOverlapOut">60</output> chars</label><input type="range" id="pgOverlap" min="0" max="300" step="10" value="60"></div>
+    </div>
+    <div class="chunk-summary" id="pgSummary"></div>
+    <div class="chunks" id="pgChunks"></div>
+  </div>
+  <p>The app itself uses 800 / 150. With those settings this page of the lecture becomes two chunks (you can set the sliders to check).</p>
+
+  <h3>Step 4: embed with the right prefix</h3>
+<pre><code>def embed_passages(texts):
+    <span class="c"># e5 models are trained with "passage: " / "query: " prefixes.</span>
+    return get_embedder().encode([f"passage: {t}" for t in texts],
+                                 normalize_embeddings=True, batch_size=32).tolist()
+
+def embed_query(text):
+    return get_embedder().encode(f"query: {text}", normalize_embeddings=True).tolist()</code></pre>
+  <p>The e5 model family was trained to see <code>passage: </code> before stored text and <code>query: </code> before questions. Leaving the prefixes out still works, but noticeably worse. It's a small detail that many tutorials miss.</p>
+
+  <h3>Step 5: store in ChromaDB</h3>
+<pre><code>doc_id = "doc_" + hashlib.sha1(pdf_bytes).hexdigest()[:16]
+col = client.get_or_create_collection(
+    doc_id, metadata={"filename": filename, "n_pages": len(pages), "hnsw:space": "cosine"})
+col.add(ids=[f"{doc_id}-p{page}-c{i}" ...], documents=[...], embeddings=[...],
+        metadatas=[{"filename": ..., "page": ..., "chunk_index": ..., "doc_id": ...}])</code></pre>
+  <ul>
+    <li><b>One collection per PDF.</b> The brief asked for it, and it makes "pick which documents to work on" and "delete a document" trivial.</li>
+    <li><b>The collection name is a hash of the file's bytes</b>, not its name. Uploading the same file again (even renamed) finds the existing collection and skips the work. That's the <code>already_indexed</code> path.</li>
+    <li><b>Metadata</b> (filename, page) is stored with every chunk. That's what makes citations and page-range filters possible.</li>
+    <li><b>Batches of 32</b> chunks are embedded at a time, so the progress bar can move and memory stays low.</li>
+  </ul>
+</section>
+
+<hr>
+
+<!-- ============================================================ 5 -->
+<section class="chapter" id="retrieval" data-ch="retrieval">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 5 · core/retriever.py</div><h2>Retrieval: finding the right chunks</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="retrieval"> Mark as studied</label></div>
+
+  <p>Retrieval has three functions. Both features use them.</p>
+
+  <h3><code>retrieve(query, doc_ids, k=5, page_range=None)</code></h3>
+<pre><code>q_emb = embed_query(query)
+for doc_id in doc_ids:                       <span class="c"># one search per selected PDF</span>
+    res = col.query(query_embeddings=[q_emb], n_results=min(k, n),
+                    where=_page_filter(page_range), ...)
+    hits += [...]                             <span class="c"># score = 1 - cosine distance</span>
+hits.sort(key=lambda h: h["score"], reverse=True)
+return hits[:k]                               <span class="c"># best k across ALL documents</span></code></pre>
+  <p>Because there is one collection per PDF, we search each selected collection, collect all hits, sort them by score, and keep the best k overall. Chroma returns a <i>distance</i> (0 = identical); we convert it to a <i>similarity</i> (<code>1 − distance</code>) because "higher is better" is easier to read in the Sources panel.</p>
+  <p>The page filter is a Chroma <code>where</code> clause on the metadata:</p>
+<pre><code>{"$and": [{"page": {"$gte": 2}}, {"page": {"$lte": 4}}]}</code></pre>
+
+  <h3><code>all_chunks()</code> and <code>sample_spread(doc_ids, n)</code></h3>
+  <p>For a quiz with no topic, we don't want 10 questions about page 1. <code>sample_spread</code> gets every chunk in reading order and takes <code>n</code> of them at equal steps, so the quiz covers the whole lecture.</p>
+<pre><code>step = len(chunks) / n
+return [chunks[int(i * step)] for i in range(n)]   <span class="c"># e.g. 14 chunks, n=5 → indexes 0, 2, 5, 8, 11</span></code></pre>
+
+  <div class="note"><b>Real numbers from the sample.</b> For "How big is the UDP header?" the top hit was page 3 with similarity 0.85. For an unrelated question ("capital of France?") the best score was only 0.73. Even irrelevant text scores around 0.7 with e5 models, so a fixed "minimum score" filter is risky. That's why refusing unrelated questions is left to the prompt (Chapter 6).</div>
+</section>
+
+<hr>
+
+<!-- ============================================================ 6 -->
+<section class="chapter" id="rag" data-ch="rag">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 6 · core/rag.py + prompts.py</div><h2>RAG Q&amp;A: answering from your slides</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="rag"> Mark as studied</label></div>
+
+  <div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  participant U as Student
+  participant A as app.py
+  participant R as rag.prepare
+  participant DB as ChromaDB
+  participant L as LLM
+  U->>A: question
+  A->>R: question + chat history
+  R->>R: detect language (ar / en)
+  R->>DB: retrieve top 5 chunks
+  DB-->>R: chunks + filename + page
+  R-->>A: system prompt, user prompt, sources
+  A->>L: stream(system, user)
+  L-->>A: tokens, answer with [file p.N]
+  A-->>U: answer + citation line + Sources panel
+</pre>
+  </div>
+
+  <h3>1. Detect the language</h3>
+<pre><code>def detect_language(text):
+    return "ar" if len(_ARABIC.findall(text)) > len(_LATIN.findall(text)) else "en"</code></pre>
+  <p>We count Arabic letters vs Latin letters. A question like "ما هو TCP؟" has more Arabic letters, so it's Arabic. The language name is then written <b>into the prompt</b> ("Write the whole answer in Arabic"). Small models follow an explicit instruction much better than "answer in the same language as the question".</p>
+
+  <h3>2. Handle follow-up questions</h3>
+<pre><code>if history and len(question.split()) &lt; 6:
+    prev = last user question
+    return f"{prev} {question}"      <span class="c"># used only for retrieval</span></code></pre>
+  <p>"And what happens on a timeout?" contains no topic words, so searching for it alone finds nothing useful. For short questions we search with the previous question glued in front. The last 2 exchanges are also included in the prompt so the model understands what "it" refers to.</p>
+
+  <h3>3. The prompt</h3>
+  <p>The system prompt holds the rules; the user prompt holds the data. Here is the real system prompt:</p>
+<pre><code>You are StudyRAG, a careful study assistant for a college student.
+Rules:
+1. Answer ONLY with information found in the CONTEXT excerpts. Do not use outside knowledge.
+2. If the CONTEXT does not contain the answer, reply with exactly this sentence and nothing else:
+   "I couldn't find the answer to that in the selected material."
+3. After each fact, cite its excerpt label exactly as written, e.g. [lecture.pdf p.3].
+4. Write the whole answer in English.
+5. Be concise and clear: a short paragraph or a few bullet points.</code></pre>
+  <p>Each retrieved chunk is put in the CONTEXT with a label, <code>[networks_lecture.pdf p.3]</code>, and the model is told to copy that label as its citation. This is the simplest reliable citation method: the model doesn't have to invent a format, only copy one.</p>
+
+  <h3>4. Three layers against hallucination</h3>
+  <ol class="steps">
+    <li><div><b>No chunks at all</b> (no documents selected, or empty): we don't even call the LLM; we return the fixed "not found" sentence.</div></li>
+    <li><div><b>The prompt rule</b> tells the model to answer only from the context and to use the exact refusal sentence otherwise.</div></li>
+    <li><div><b><code>is_not_found()</code></b> checks whether the answer starts with that refusal sentence. If it does, the UI hides the citations and Sources, so the student isn't shown "sources" for an answer that doesn't exist.</div></li>
+  </ol>
+  <p>In testing, "Who invented the World Wide Web?" and "Who won the 2022 World Cup?" were both correctly refused.</p>
+
+  <h3>5. Streaming and the citation line</h3>
+  <p>The UI calls <code>llm.stream()</code> so words appear as they are generated. After the answer, <code>_cite_line()</code> in <code>app.py</code> finds all <code>[file p.N]</code> labels with a regex and shows them as a "📎" line. If the model forgot to cite, it falls back to listing the retrieved pages.</p>
+  <div class="warn"><b>Known weakness.</b> A 4B model sometimes cites the wrong neighbouring page (for example, a fact from p.7 cited as p.4). The Sources panel exists so the student can always see the real text and page.</div>
+</section>
+
+<hr>
+
+<!-- ============================================================ 7 -->
+<section class="chapter" id="mcq" data-ch="mcq">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 7 · core/mcq.py + schemas.py</div><h2>The MCQ generator</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="mcq"> Mark as studied</label></div>
+
+  <p>This is the most engineered part of the project. A question that is badly worded, has two correct answers, or has the wrong answer marked is <i>worse than no question</i>, because it teaches the student something false. So generation is a pipeline of checks.</p>
+
+  <div class="diagram">
+<pre class="mermaid">
+flowchart TD
+  S["select_chunks<br/>topic search or even spread"] --> L{"enough questions?<br/>or 2 empty rounds?"}
+  L -- no --> A["_ask: LLM writes 5 questions<br/>JSON schema enforced"]
+  A --> V["parse_mcqs: Pydantic<br/>one retry on failure"]
+  V --> P["attribute_pages<br/>embedding match"]
+  P --> SH["shuffle_options"]
+  SH --> D["dedupe<br/>cosine ≥ 0.93"]
+  D --> BS["verify: blind-solve<br/>keep if only the key is correct"]
+  BS --> L
+  L -- yes --> OUT["first n questions"]
+</pre>
+  </div>
+
+  <h3>Step 1: choose the material</h3>
+  <ul>
+    <li><b>With a topic</b>: <code>retrieve(topic)</code>, then keep only chunks within 0.05 similarity of the best hit (<code>TOPIC_SCORE_MARGIN</code>). Without this, a short lecture would return <i>every</i> chunk and the "UDP" quiz drifted into TCP questions. We saw exactly that in testing.</li>
+    <li><b>Without a topic</b>: <code>sample_spread</code> for even coverage.</li>
+  </ul>
+
+  <h3>Step 2: generate in small batches</h3>
+  <p>Each LLM call gets <b>3 chunks</b> (~2,400 characters) and is asked for <b>5 questions</b>. Small models do much better with short context and small tasks than with "write 30 questions from this whole PDF". The loop walks through the chunk pool so successive batches cover different parts. The prompt also lists the questions already written ("Do NOT repeat these…").</p>
+  <p>With Ollama, the JSON schema is passed as <code>format</code>. That's <span class="hl">constrained decoding</span>: Ollama only lets the model produce tokens that keep the output valid against the schema, so broken JSON becomes almost impossible.</p>
+
+  <h3>Step 3: validate with Pydantic</h3>
+  <div class="file">core/schemas.py · class MCQ</div>
+<pre><code>class MCQ(BaseModel):
+    question: str = Field(min_length=8)
+    options: list[str] = Field(min_length=4, max_length=4)
+    correct: Literal["A", "B", "C", "D"]
+    explanation: str
+    source_page: int = Field(ge=1)</code></pre>
+  <div class="tbl"><table>
+    <thead><tr><th>Rule</th><th>What it catches</th></tr></thead>
+    <tbody>
+      <tr><td>exactly 4 options</td><td>3 or 5 options</td></tr>
+      <tr><td>4 <b>distinct</b> options (case-insensitive)</td><td>the same answer twice, which would mean two correct options</td></tr>
+      <tr><td>no "all / none of the above", "both A and B"</td><td>lazy distractors that make "exactly one correct" ambiguous</td></tr>
+      <tr><td>strip "A) ", "(b) " prefixes from options</td><td>the model labelling options itself</td></tr>
+      <tr><td>no options pasted into the question text</td><td>"Which…? A) … B) …" (we saw this with qwen2.5:3b)</td></tr>
+      <tr><td>correct option not more than 2× longer than every distractor</td><td>giveaways: the long, detailed option is obviously the right one</td></tr>
+      <tr><td>normalize <code>correct</code></td><td>accepts "b", "B)", "Option B" or the full option text, and converts it to "B"</td></tr>
+    </tbody>
+  </table></div>
+  <p>Each question is validated <b>separately</b>: one bad question is dropped, the good ones in the same batch are kept. If <i>nothing</i> usable came back, we retry <b>once</b>, appending the error messages to the prompt so the model knows what to fix, with a lower temperature (0.2).</p>
+
+  <h3>Step 4: attribute the source page</h3>
+<pre><code>c_emb = encode(["passage: " + chunk text ...])
+q_emb = encode(["query: " + question + correct answer ...])
+best = argmax(q_emb @ c_emb.T)          <span class="c"># most similar chunk for each question</span>
+source_page = chunks[best]["page"]</code></pre>
+  <p>We ask the model for <code>source_page</code>, but we don't trust it. In testing it wrote "4" because the fact was in <i>Excerpt 1</i> of a batch whose pages were 4, 7 and 9, while the real page was 9. Matching the question plus its answer against the batch's chunks by embedding gives the right page every time.</p>
+
+  <h3>Step 5: shuffle the options</h3>
+  <p>Small models put the correct answer under "A" far too often. <code>shuffle_options</code> shuffles the 4 options and recomputes which letter is correct, so the answer key is balanced. A seeded <code>random.Random</code> makes it repeatable in tests.</p>
+
+  <h3>Step 6: remove duplicates</h3>
+  <p>Exact duplicates are caught by comparing normalized text. Near-duplicates ("Which port does HTTPS use?" vs "What port is used by HTTPS by default?") are caught by embedding similarity: if a new question has cosine ≥ <b>0.93</b> with any question already kept, it's dropped.</p>
+
+  <h3>Step 7: the blind-solve check</h3>
+  <p>This is the most important idea in the project. Valid JSON tells you the <i>format</i> is right, not the <i>answer</i>. In testing, perfectly valid questions had the wrong letter marked as correct, or two true options. Pydantic can't see that.</p>
+  <p>So after generating a batch, we send the questions <b>without the answer key</b> back to the model, with the same excerpts, and ask a different question: <i>"List every option that is correct according to the excerpts."</i></p>
+<pre><code>reviews = {1: {"B"}, 2: {"A", "C"}, 3: set(), ...}
+keep q  only if  reviews[i] == {q.correct}      <span class="c"># exactly one correct, and it's the key</span></code></pre>
+  <div class="tbl"><table>
+    <thead><tr><th>Review says</th><th>Meaning</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td><code>{"B"}</code>, key is B</td><td>one correct answer, matches</td><td><span class="pill ok">kept</span></td></tr>
+      <tr><td><code>{"C"}</code>, key is B</td><td>the key is probably wrong</td><td><span class="pill bad">dropped</span></td></tr>
+      <tr><td><code>{"A", "B"}</code></td><td>ambiguous: two true options</td><td><span class="pill bad">dropped</span></td></tr>
+      <tr><td><code>{}</code></td><td>no option supported by the text</td><td><span class="pill bad">dropped</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="why"><b>Design choices to remember.</b>
+    <ul>
+      <li><b>Shuffle before verifying</b>, so the reviewer can't lean on the "answer is usually A" habit.</li>
+      <li><b>Temperature 0.0</b> for the review: we want its most consistent judgment.</li>
+      <li><b>Fail open:</b> if the review itself comes back unreadable, we keep the batch instead of throwing everything away. It's a trade-off: never returning an empty quiz vs. occasionally letting an unchecked question through.</li>
+      <li><b>Over-generate:</b> each batch always asks for 5 even if we need fewer, because some get rejected. Extras are trimmed at the end.</li>
+    </ul>
+  </div>
+
+  <h3>The loop and when it stops</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Constant</th><th>Value</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>BATCH_QUESTIONS</code></td><td>5</td><td>questions per LLM call</td></tr>
+      <tr><td><code>CHUNKS_PER_BATCH</code></td><td>3</td><td>excerpts per call</td></tr>
+      <tr><td><code>MAX_EXTRA_ROUNDS</code></td><td>4</td><td>extra calls allowed to replace rejected questions</td></tr>
+      <tr><td><code>MAX_EMPTY_ROUNDS</code></td><td>2</td><td>stop if two rounds in a row add nothing (material exhausted)</td></tr>
+      <tr><td><code>DUP_THRESHOLD</code></td><td>0.93</td><td>cosine similarity that counts as a duplicate</td></tr>
+      <tr><td><code>TOPIC_SCORE_MARGIN</code></td><td>0.05</td><td>how close to the best hit a chunk must be in topic mode</td></tr>
+    </tbody>
+  </table></div>
+  <p>For 10 questions: <code>ceil(10/5) = 2</code> normal rounds + up to 4 extra rounds. If the material simply doesn't have enough distinct facts, the app returns fewer questions and the UI says so, which is better than padding the quiz with bad questions.</p>
+
+  <h3>Difficulty levels</h3>
+  <p>Difficulty is a description injected into the prompt (<code>DIFFICULTY_GUIDE</code> in <code>prompts.py</code>): <b>easy</b> = recall one stated fact; <b>medium</b> = explain why/how, compare, apply a rule; <b>hard</b> = multi-step reasoning or a scenario, with common misconceptions as distractors.</p>
+
+  <h3>Model choice, measured</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Model</th><th>What we observed</th></tr></thead>
+    <tbody>
+      <tr><td><code>qwen2.5:3b</code></td><td>Fast, but about a third of the questions had wrong keys or two correct options; options pasted into question text.</td></tr>
+      <tr><td><code>qwen3:4b</code></td><td>Much better questions, but it's a "thinking" model: up to 233 s per chat answer, with its reasoning leaking into the text.</td></tr>
+      <tr><td><code>qwen3:4b-instruct</code> <span class="pill ok">default</span></td><td>Same quality without the thinking: 10/10 medium questions correct; chat answers in 4–8 s.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<hr>
+
+<!-- ============================================================ 8 -->
+<section class="chapter" id="llm" data-ch="llm">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 8 · core/llm.py</div><h2>The LLM wrapper</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="llm"> Mark as studied</label></div>
+
+  <p>The rest of the code never talks to Ollama or Claude directly. It calls three functions:</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Function</th><th>Used by</th><th>Does</th></tr></thead>
+    <tbody>
+      <tr><td><code>generate(system, user, json_schema=None, temperature)</code></td><td>MCQ, verification, eval</td><td>One full answer as a string.</td></tr>
+      <tr><td><code>stream(system, user)</code></td><td>Chat tab</td><td>Yields the answer piece by piece.</td></tr>
+      <tr><td><code>health()</code></td><td>Sidebar 🟢 / 🔴</td><td>Is the server up and the model installed?</td></tr>
+    </tbody>
+  </table></div>
+  <p>This is the <span class="hl">adapter pattern</span>: one interface, several back-ends, chosen by <code>LLM_PROVIDER</code> in <code>.env</code>.</p>
+
+  <h3>Ollama</h3>
+<pre><code>POST http://localhost:11434/api/chat
+{
+  "model": "qwen3:4b-instruct",
+  "messages": [{"role": "system", ...}, {"role": "user", ...}],
+  "stream": false,
+  "format": { ...JSON schema... },        <span class="c"># only for MCQ / verification</span>
+  "options": {"temperature": 0.4, "num_ctx": 8192, "num_predict": 4096}
+}</code></pre>
+  <p><code>num_ctx: 8192</code> matters: Ollama's default context on a 4 GB GPU is only 4096 tokens, which can cut off the excerpts plus the list of already-written questions.</p>
+
+  <h3>Claude</h3>
+  <p>Uses the official <code>anthropic</code> SDK. Claude has no <code>format</code> option here, so the JSON schema is appended to the prompt as text ("Return ONLY a JSON object matching this schema"). Our tolerant <code>_extract_json</code> also strips <code>```json</code> code fences if they appear.</p>
+
+  <h3>The fake provider</h3>
+  <p><code>LLM_PROVIDER=fake</code> returns predictable answers built from the prompt itself: questions made from sentences in the excerpts, and a reviewer that "knows" which option was quoted. It means all 43 tests run in about 20 seconds with no GPU and no model. That's a common professional technique: <span class="hl">make the slow, unpredictable dependency swappable</span>.</p>
+
+  <h3>Thinking models</h3>
+  <p>Some models write their reasoning before the answer, between <code>&lt;think&gt;</code> tags. <code>strip_think()</code> removes it from full answers, and <code>_skip_think()</code> swallows it from the stream. <code>OLLAMA_THINK=false</code> asks Ollama to turn thinking off for models that support switching it.</p>
+</section>
+
+<hr>
+
+<!-- ============================================================ 9 -->
+<section class="chapter" id="app" data-ch="app">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 9 · app.py</div><h2>The Streamlit app</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="app"> Mark as studied</label></div>
+
+  <h3>The one thing to understand about Streamlit</h3>
+  <p><span class="hl">Every click re-runs the whole script from top to bottom.</span> Typing a question, ticking a radio button, pressing a button: Streamlit runs <code>app.py</code> again and redraws the page. Two tools make that workable:</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Tool</th><th>What survives a rerun</th><th>Used for</th></tr></thead>
+    <tbody>
+      <tr><td><code>st.session_state</code></td><td>Per-user values</td><td>chat history, the current quiz, whether it's submitted, which uploads were already processed</td></tr>
+      <tr><td><code>@st.cache_resource</code></td><td>Shared heavy objects</td><td>the embedding model (loaded once, not on every click)</td></tr>
+    </tbody>
+  </table></div>
+  <p>Example: without <code>ss.ingested</code>, every rerun would see the uploaded file again and re-process it. We store <code>(file name, size)</code> of processed uploads to skip them.</p>
+
+  <h3>Layout</h3>
+  <ul>
+    <li><b>Sidebar</b>: title, LLM status (🟢 / 🔴 with a fix-it message), uploader with progress bar, the "Work on" document picker, and a Manage section to delete a document.</li>
+    <li><b>Ask tab</b>: the conversation in a container <i>above</i> the input box, the citation line, and a "Sources" expander with the retrieved chunks and their similarity scores.</li>
+    <li><b>Quiz tab</b>: a form (number, difficulty, topic, page range), a progress bar while generating, then one radio group per question, Submit → score and explanations, Retake, and the three export buttons.</li>
+  </ul>
+
+  <h3>Details worth knowing</h3>
+  <ul>
+    <li><b>Arabic display</b>: <code>_markdown()</code> wraps Arabic text in <code>dir="rtl"</code> and wraps citations in <code>&lt;bdi dir="ltr"&gt;</code> so the brackets don't flip.</li>
+    <li><b>Streaming then re-render</b>: the answer streams into a placeholder (<code>st.empty()</code>), then the placeholder is replaced with the final, right-to-left-aware rendering.</li>
+    <li><b>Radio keys include <code>quiz_id</code></b>: "Retake" increments the id, which gives every radio a new key and clears all answers.</li>
+    <li><b>The quiz is stored as validated <code>MCQ</code> objects</b>, not re-validated on every rerun (Chapter 12 explains the crash that taught us this).</li>
+    <li><b><code>.streamlit/config.toml</code></b> disables the file watcher, which otherwise crawls torch/transformers and floods the log with harmless import errors.</li>
+  </ul>
+</section>
+
+<hr>
+
+<!-- ============================================================ 10 -->
+<section class="chapter" id="export" data-ch="export">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 10 · core/export.py</div><h2>Export</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="export"> Mark as studied</label></div>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Format</th><th>How</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>JSON</td><td><code>json.dumps</code> of each <code>MCQ.model_dump()</code></td><td><code>ensure_ascii=False</code> keeps Arabic readable. It round-trips: the tests load it back into <code>MCQ</code> objects.</td></tr>
+      <tr><td>Markdown</td><td>Questions with A–D options, then a <code>---</code> and an "Answer key" section</td><td>Key lines show letter, answer text, explanation and page.</td></tr>
+      <tr><td>PDF</td><td>Build HTML → <code>fitz.Story</code> lays it out over as many A4 pages as needed</td><td>Answer key starts on a new page. Uses Arial (Windows) or DejaVu Sans (Docker) because they contain Arabic letters.</td></tr>
+    </tbody>
+  </table></div>
+  <p>The PDF used to be 1.1 MB because the whole Arial font was embedded. <code>doc.subset_fonts()</code> keeps only the letters actually used, and the file became tiny. The same trick shrank the sample lecture from 1.8 MB to 83 KB.</p>
+</section>
+
+<hr>
+
+<!-- ============================================================ 11 -->
+<section class="chapter" id="testing" data-ch="testing">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 11 · tests/ + eval/</div><h2>Tests &amp; evaluation</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="testing"> Mark as studied</label></div>
+
+  <h3>Unit tests (43, no LLM needed)</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>File</th><th>Checks</th></tr></thead>
+    <tbody>
+      <tr><td><code>test_chunking.py</code></td><td>size limits, overlap, nothing lost, paragraph boundaries, hard splits, Arabic text, page numbers kept, blank page detected</td></tr>
+      <tr><td><code>test_schemas.py</code></td><td>every Pydantic rule (bad questions rejected, letters normalized, prefixes stripped), JSON parsing, shuffle keeps the answer, de-dup, page attribution</td></tr>
+      <tr><td><code>test_retrieval.py</code></td><td>ingestion result, re-upload cached, metadata on every hit, Arabic query finds the Arabic page, page filter, spread sampling, full quiz pipeline with the fake LLM</td></tr>
+      <tr><td><code>test_llm.py</code></td><td><code>&lt;think&gt;</code> stripping (full and streamed), health check reports a dead server</td></tr>
+      <tr><td><code>test_export.py</code></td><td>JSON round-trip, Markdown key order, PDF size and content</td></tr>
+    </tbody>
+  </table></div>
+  <p><code>conftest.py</code> sets the provider to <code>fake</code> and gives each test session a <b>temporary ChromaDB</b>, so tests never touch your real data.</p>
+
+  <h3>Retrieval evaluation</h3>
+  <p><code>eval/qa_pairs.json</code> has 10 hand-written questions, each with the page that contains the answer (9 English, 1 Arabic). <code>run_eval.py</code> indexes the sample into a temporary DB and checks where the right page appears in the top 5.</p>
+  <div class="concepts">
+    <div class="concept"><h4>Hit rate@5</h4><p>Fraction of questions where the correct page is <i>anywhere</i> in the top 5. Measures "did we find it at all?"</p></div>
+    <div class="concept"><h4>MRR@5</h4><p>Mean Reciprocal Rank: average of 1/rank of the correct page (1st = 1, 2nd = 0.5, 3rd = 0.33, missing = 0). Measures "how high did it rank?"</p></div>
+  </div>
+<pre><code>ranks of the correct page:  1, 1, 2, missing
+hit rate = 3/4 = 0.75
+MRR      = (1 + 1 + 0.5 + 0) / 4 = 0.625</code></pre>
+  <p>Our result: hit rate 10/10, MRR 1.00 (the right page was first every time). The sample is small and clean, so this is a <b>regression check</b>: if a future change breaks retrieval, this number drops. To measure real quality, add questions about your own course.</p>
+</section>
+
+<hr>
+
+<!-- ============================================================ 12 -->
+<section class="chapter" id="lessons" data-ch="lessons">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 12</div><h2>Bugs we hit and how we fixed them</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="lessons"> Mark as studied</label></div>
+
+  <p>These are real problems from building this project. They make the best interview stories, because each one shows how you think, not just what you built.</p>
+
+  <div class="bug"><h4>Arabic search didn't work</h4><dl>
+    <dt>Symptom</dt><dd>Extracted Arabic looked fine on screen but contained odd characters like ﻣﻠﺧﺹ.</dd>
+    <dt>Cause</dt><dd>The PDF stored Arabic as presentation forms (positional glyph codes), not normal letters.</dd>
+    <dt>Fix</dt><dd><code>unicodedata.normalize("NFKC", text)</code> at extraction time.</dd>
+    <dt>Lesson</dt><dd>Always look at the raw extracted text, not just the PDF.</dd></dl></div>
+
+  <div class="bug"><h4>Valid JSON, wrong answers</h4><dl>
+    <dt>Symptom</dt><dd>About a third of the 3B model's questions had wrong keys or two correct options, yet passed validation.</dd>
+    <dt>Cause</dt><dd>Schema validation checks shape, not truth.</dd>
+    <dt>Fix</dt><dd>The blind-solve verification step, plus switching to a stronger 4B model.</dd>
+    <dt>Lesson</dt><dd>Read your model's output by hand before trusting any metric.</dd></dl></div>
+
+  <div class="bug"><h4>Chat answers took four minutes</h4><dl>
+    <dt>Symptom</dt><dd>With <code>qwen3:4b</code>, answers began with "Okay, let me think…" and took up to 233 s.</dd>
+    <dt>Cause</dt><dd>That tag is a thinking-only model; it ignored <code>think: false</code>.</dd>
+    <dt>Fix</dt><dd>Use <code>qwen3:4b-instruct</code>; strip any <code>&lt;think&gt;</code> text as a safety net.</dd>
+    <dt>Lesson</dt><dd>Model tags with the same name can be very different models.</dd></dl></div>
+
+  <div class="bug"><h4>Quiz cited page 4 for a page-9 fact</h4><dl>
+    <dt>Symptom</dt><dd>The explanation said "as stated in Excerpt 1".</dd>
+    <dt>Cause</dt><dd>The model confused the excerpt number with the page number.</dd>
+    <dt>Fix</dt><dd>Compute the page with embeddings (<code>attribute_pages</code>) instead of trusting the model.</dd>
+    <dt>Lesson</dt><dd>Don't ask an LLM for something you can compute exactly.</dd></dl></div>
+
+  <div class="bug"><h4>App crashed on the first upload</h4><dl>
+    <dt>Symptom</dt><dd>"Could not connect to tenant default_tenant" from ChromaDB.</dd>
+    <dt>Cause</dt><dd>Streamlit started a rerun while the first run was still opening the database, so two threads created the client at once (a <span class="hl">race condition</span>).</dd>
+    <dt>Fix</dt><dd>A <code>threading.Lock</code> around client creation (and around loading the embedding model).</dd>
+    <dt>Lesson</dt><dd>UI frameworks can run your code in parallel even when you didn't ask for threads.</dd></dl></div>
+
+  <div class="bug"><h4>Quiz page crashed after an update</h4><dl>
+    <dt>Symptom</dt><dd>A Pydantic ValidationError when clicking Submit.</dd>
+    <dt>Cause</dt><dd>The quiz was saved as plain dicts and re-validated on every rerun; a new rule rejected an old question.</dd>
+    <dt>Fix</dt><dd>Store the already-validated <code>MCQ</code> objects in the session.</dd>
+    <dt>Lesson</dt><dd>Validate at the boundary (when data enters), not every time you read it.</dd></dl></div>
+
+  <div class="bug"><h4>"Cannot reach Ollama"</h4><dl>
+    <dt>Symptom</dt><dd>Both tabs failed with a connection error.</dd>
+    <dt>Cause</dt><dd>The Ollama server had stopped; it had been started from a session that later ended.</dd>
+    <dt>Fix</dt><dd>Start Ollama independently, and add the 🟢 / 🔴 health check in the sidebar so the problem shows before you ask anything.</dd>
+    <dt>Lesson</dt><dd>Check dependencies up front and give the user a fix, not just an error.</dd></dl></div>
+
+  <div class="bug"><h4>Smaller ones</h4><dl>
+    <dt>Disk</dt><dd>The Ollama install failed: C: had 4 GB free. Installed on D: with <code>OLLAMA_MODELS</code> pointing there.</dd>
+    <dt>Topic</dt><dd>A "UDP" quiz drifted to TCP on a short lecture → keep only chunks near the best match.</dd>
+    <dt>Layout</dt><dd>The chat box appeared above the messages → render messages in a container created before the input.</dd>
+    <dt>Size</dt><dd>PDFs of 1+ MB from embedded fonts → <code>subset_fonts()</code>.</dd></dl></div>
+</section>
+
+<hr>
+
+<!-- ============================================================ 13 -->
+<section class="chapter" id="selftest" data-ch="selftest">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 13</div><h2>Self-test &amp; glossary</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="selftest"> Mark as studied</label></div>
+
+  <p>Try to answer each question out loud before opening it. These are also the questions an interviewer is likely to ask about this project.</p>
+
+  <h3>Fundamentals</h3>
+  <details class="qa"><summary>What is RAG, and why use it instead of just asking the LLM?</summary><div class="ans"><p>Retrieval-Augmented Generation: retrieve relevant passages from your documents, then have the LLM answer using only those passages. The model doesn't know your specific lecture, may hallucinate, and can't cite pages. RAG grounds the answer in your material and makes citations possible.</p></div></details>
+  <details class="qa"><summary>What is an embedding, and how do we decide two texts are similar?</summary><div class="ans"><p>A vector of numbers (384 here) representing meaning. We compare vectors with cosine similarity; since we normalize them to length 1, that's just their dot product. Closer to 1 = more similar.</p></div></details>
+  <details class="qa"><summary>Why prefix texts with "passage: " and "query: "?</summary><div class="ans"><p>The e5 models were trained that way. Questions and passages are different kinds of text, and the prefixes tell the model which one it's embedding. Leaving them out reduces retrieval quality.</p></div></details>
+  <details class="qa"><summary>Why ~800 characters with 150 overlap, and why chunk per page?</summary><div class="ans"><p>800 characters is a few paragraphs: enough context to answer a question, small enough that one chunk is about one idea. Overlap prevents a key sentence from being cut in half at a boundary. Per-page chunking guarantees every chunk has exactly one page number, so citations are exact.</p></div></details>
+  <details class="qa"><summary>How does a multilingual model let an Arabic question find English content?</summary><div class="ans"><p>multilingual-e5 was trained so that texts with the same meaning get similar vectors regardless of language. "ما فائدة المصافحة الثلاثية" lands near the English chunk about the three-way handshake (we tested exactly this).</p></div></details>
+
+  <h3>Design decisions</h3>
+  <details class="qa"><summary>Why one Chroma collection per PDF, and what is the collection name?</summary><div class="ans"><p>The brief asked for it, and it makes selecting and deleting documents simple. The name is <code>doc_</code> + the first 16 hex characters of the SHA-1 of the file bytes, so the same file uploaded twice (even renamed) is recognized and not re-indexed.</p></div></details>
+  <details class="qa"><summary>How does the app avoid hallucinating answers?</summary><div class="ans"><p>Three layers: no retrieved chunks → fixed refusal without calling the LLM; a prompt rule to answer only from CONTEXT and use an exact refusal sentence otherwise; <code>is_not_found()</code> detects that sentence and hides citations/sources. Plus the Sources panel lets the student verify any answer.</p></div></details>
+  <details class="qa"><summary>Why doesn't Pydantic validation guarantee good questions?</summary><div class="ans"><p>It checks structure (4 distinct options, a valid letter), not facts. A question can be perfectly valid JSON with the wrong letter marked correct, or with two true options. That's why the blind-solve verification exists.</p></div></details>
+  <details class="qa"><summary>Explain the blind-solve check. Why shuffle first, and why "fail open"?</summary><div class="ans"><p>The model re-answers each question without the key and lists every option it thinks is correct; we keep the question only if that set is exactly {the key}. Shuffling first stops the reviewer from benefiting from the "answer is usually A" bias. Failing open (keeping the batch if the review is unreadable) means a broken review never empties the quiz; the trade-off is that some unchecked questions can slip through.</p></div></details>
+  <details class="qa"><summary>Why compute the source page with embeddings instead of asking the model?</summary><div class="ans"><p>The model confused excerpt numbers with page numbers. Comparing the question plus its correct answer to each chunk in the batch is exact and cheap. General rule: don't ask an LLM for something you can compute.</p></div></details>
+  <details class="qa"><summary>Why different temperatures (0.2 / 0.4 / 0.0)?</summary><div class="ans"><p>Answers should be factual and stable (0.2). Writing questions benefits from some variety so batches don't repeat (0.4). The verification is a judgment and should be as consistent as possible (0.0).</p></div></details>
+  <details class="qa"><summary>What is constrained decoding?</summary><div class="ans"><p>Passing a JSON schema to Ollama's <code>format</code> option. While generating, Ollama only allows tokens that keep the output valid against the schema, so the model can't produce broken JSON. We still validate afterwards because the content can still be wrong.</p></div></details>
+
+  <h3>Engineering</h3>
+  <details class="qa"><summary>What is the fake provider for?</summary><div class="ans"><p>It makes the LLM swappable for a deterministic stub, so tests run in ~20 s with no GPU and always give the same result. Testing code that depends on a slow, random external service is otherwise unreliable.</p></div></details>
+  <details class="qa"><summary>Why the threading lock around the Chroma client?</summary><div class="ans"><p>Streamlit can run two script runs in parallel (a rerun starts while the first is still going). Both tried to create the persistent client at the same time, and one got a half-initialized instance. The lock ensures only one is ever created.</p></div></details>
+  <details class="qa"><summary>Explain Streamlit's rerun model and session_state.</summary><div class="ans"><p>Every interaction re-executes the whole script. Normal variables are lost each time; <code>st.session_state</code> keeps per-user values (chat, quiz) across reruns, and <code>@st.cache_resource</code> keeps heavy shared objects (the embedding model) loaded once.</p></div></details>
+  <details class="qa"><summary>Hit rate vs MRR?</summary><div class="ans"><p>Hit rate@k: did the right page appear anywhere in the top k? MRR@k: average of 1/rank of the right page, so it also rewards ranking it first. Hit rate tells you "found or not"; MRR tells you "how high".</p></div></details>
+  <details class="qa"><summary>How would you scale this to 1,000 PDFs?</summary><div class="ans"><p>One collection per PDF means one query per selected document, which gets slow. I'd move to a single collection with <code>doc_id</code> in the metadata and filter with a <code>where</code> clause; consider hybrid search (BM25 + vectors) and a re-ranker for quality; embed on a GPU or in background jobs; and possibly a server-based vector DB.</p></div></details>
+  <details class="qa"><summary>What would you improve next?</summary><div class="ans"><p>Built-in OCR for scanned PDFs; .pptx/.docx support; hybrid search and re-ranking; a larger evaluation set from real courses, including answer-quality scoring; flashcards and tracking weak topics over time.</p></div></details>
+
+  <h3>Glossary</h3>
+  <dl class="gloss">
+    <dt>Chunk</dt><dd>A small piece of a document (~800 characters here) that is embedded and stored.</dd>
+    <dt>Collection</dt><dd>A named group of embeddings in ChromaDB; one per PDF here.</dd>
+    <dt>Constrained decoding</dt><dd>Restricting the model's output to tokens that keep it valid against a schema.</dd>
+    <dt>Cosine similarity</dt><dd>Similarity of two vectors by their angle; 1 = same direction.</dd>
+    <dt>Distractor</dt><dd>A wrong option in a multiple-choice question.</dd>
+    <dt>e5</dt><dd>A family of embedding models from Microsoft; we use multilingual-e5-small.</dd>
+    <dt>Embedding</dt><dd>A vector that represents the meaning of a text.</dd>
+    <dt>Grounding</dt><dd>Making an answer depend on given source text rather than the model's memory.</dd>
+    <dt>Hallucination</dt><dd>A confident but unsupported or false model output.</dd>
+    <dt>HNSW</dt><dd>The graph index Chroma uses to find nearest vectors quickly.</dd>
+    <dt>Metadata</dt><dd>Extra fields stored with each chunk: filename, page, chunk index, doc id.</dd>
+    <dt>MRR</dt><dd>Mean Reciprocal Rank: average of 1/rank of the first correct result.</dd>
+    <dt>NFKC</dt><dd>A Unicode normalization that converts compatibility characters (like Arabic presentation forms) to standard ones.</dd>
+    <dt>Ollama</dt><dd>A tool that downloads and runs open LLMs locally behind an HTTP API.</dd>
+    <dt>Overlap</dt><dd>Text shared between neighbouring chunks so boundary sentences aren't lost.</dd>
+    <dt>Pydantic</dt><dd>A Python library that validates data against declared types and rules.</dd>
+    <dt>RAG</dt><dd>Retrieval-Augmented Generation: retrieve, then generate from what was retrieved.</dd>
+    <dt>Race condition</dt><dd>A bug that depends on the timing of two things running at once.</dd>
+    <dt>Temperature</dt><dd>The randomness setting of an LLM; 0 = most predictable.</dd>
+    <dt>Top-k</dt><dd>The k most similar chunks to a query; k = 5 here.</dd>
+    <dt>Vector store</dt><dd>A database for storing and searching embeddings.</dd>
+  </dl>
+</section>
+
+<footer>StudyRAG study guide · covers the code in <code>D:\studyrag</code> as of October 2026. Your "studied" ticks are saved in this browser only.</footer>
+
+</main>
+</div>
+
+<script>
+/* ---------- progress tracking (per-viewer convenience) ---------- */
+(function () {
+  const KEY = "studyrag-guide-studied";
+  let done = {};
+  try { done = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { done = {}; }
+  const boxes = [...document.querySelectorAll("input[data-mark]")];
+  const total = boxes.length;
+  function render() {
+    let n = 0;
+    boxes.forEach(b => {
+      const id = b.dataset.mark;
+      b.checked = !!done[id];
+      if (done[id]) n++;
+      const link = document.querySelector('#toc a[href="#' + id + '"]');
+      if (link) link.classList.toggle("done", !!done[id]);
+    });
+    document.getElementById("progBar").style.width = (100 * n / total) + "%";
+    document.getElementById("progLabel").textContent = n + " / " + total + " studied";
+  }
+  boxes.forEach(b => b.addEventListener("change", () => {
+    done[b.dataset.mark] = b.checked;
+    try { localStorage.setItem(KEY, JSON.stringify(done)); } catch (e) {}
+    render();
+  }));
+  render();
+  if (window.matchMedia("(max-width: 920px)").matches) document.getElementById("railbox").open = false;
+})();
+
+/* ---------- chunking playground: a JS port of core/ingest.py split_text ---------- */
+(function () {
+  const SEPS = ["\n\n", "\n", ". ", "? ", "! ", "؟ ", "، ", "; ", " ", ""];
+  const MIN_CHUNK = 20;
+  function normalize(t) { return t.replace(/\r/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim(); }
+  function splitRec(text, seps, size) {
+    if (text.length <= size) return [text];
+    const sep = seps.find(s => s === "" || text.includes(s));
+    if (sep === "") { const out = []; for (let i = 0; i < text.length; i += size) out.push(text.slice(i, i + size)); return out; }
+    const raw = text.split(sep);
+    const parts = raw.slice(0, -1).map(p => p + sep).concat([raw[raw.length - 1]]);
+    const rest = seps.slice(seps.indexOf(sep) + 1);
+    const out = [];
+    for (const p of parts) { if (!p) continue; if (p.length <= size) out.push(p); else out.push(...splitRec(p, rest, size)); }
+    return out;
+  }
+  function merge(pieces, size, overlap) {
+    const chunks = []; let cur = []; let len = 0;
+    for (const p of pieces) {
+      if (cur.length && len + p.length > size) {
+        chunks.push(cur.join("").trim());
+        while (cur.length && (len > overlap || len + p.length > size)) len -= cur.shift().length;
+      }
+      cur.push(p); len += p.length;
+    }
+    if (cur.length) chunks.push(cur.join("").trim());
+    return chunks.filter(c => c.length >= MIN_CHUNK);
+  }
+  function splitText(text, size, overlap) { const t = normalize(text); return t ? merge(splitRec(t, SEPS, size), size, overlap) : []; }
+  function sharedPrefix(prev, cur) {
+    for (let k = Math.min(prev.length, cur.length); k > 0; k--) if (prev.endsWith(cur.slice(0, k))) return k;
+    return 0;
+  }
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const ta = document.getElementById("pgText"), sz = document.getElementById("pgSize"), ov = document.getElementById("pgOverlap");
+  function run() {
+    const size = +sz.value, overlap = +ov.value;
+    document.getElementById("pgSizeOut").textContent = size;
+    document.getElementById("pgOverlapOut").textContent = overlap;
+    const chunks = splitText(ta.value, size, overlap);
+    document.getElementById("pgSummary").textContent =
+      chunks.length + " chunk" + (chunks.length === 1 ? "" : "s") + " from " + normalize(ta.value).length + " characters";
+    document.getElementById("pgChunks").innerHTML = chunks.map((c, i) => {
+      const k = i ? sharedPrefix(chunks[i - 1], c) : 0;
+      const body = (k >= 3 ? "<mark>" + esc(c.slice(0, k)) + "</mark>" : esc(c.slice(0, k))) + esc(c.slice(k));
+      return '<div class="chunk"><div class="meta"><span>Chunk ' + (i + 1) + '</span><span>' + c.length + ' chars' +
+        (k >= 3 ? ' · ' + k + ' overlap' : '') + '</span></div><div class="txt">' + body + '</div></div>';
+    }).join("");
+  }
+  [ta, sz, ov].forEach(el => el.addEventListener("input", run));
+  run();
+})();
+</script>
