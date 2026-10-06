@@ -7,6 +7,12 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
+# Downloaded models (embeddings now; re-ranker / Whisper / OCR later) live inside the project
+# folder instead of ~/.cache, which sits on a nearly full C: drive on the dev machine.
+# Must be set before sentence-transformers / huggingface_hub are imported.
+MODEL_CACHE = os.getenv("MODEL_CACHE", str(ROOT / "models"))
+os.environ.setdefault("HF_HOME", MODEL_CACHE)
+
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()  # ollama | claude | fake
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b-instruct")
@@ -18,6 +24,7 @@ CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 
 EMBED_MODEL = os.getenv("EMBED_MODEL", "intfloat/multilingual-e5-small")
 CHROMA_DIR = os.getenv("CHROMA_DIR", str(ROOT / "data" / "chroma"))
+DB_PATH = os.getenv("DB_PATH", str(ROOT / "data" / "studyrag.db"))  # quiz history / progress
 
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 800))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 150))

@@ -7,4 +7,5 @@ python-dotenv>=1.0
 requests>=2.31
 anthropic>=0.40
 numpy>=1.26
+pandas>=2.0
 pytest>=8.0

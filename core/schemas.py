@@ -18,6 +18,9 @@ class MCQ(BaseModel):
     correct: Literal["A", "B", "C", "D"]
     explanation: str = Field(min_length=3)
     source_page: int = Field(ge=1)
+    # Filled in by mcq.attribute_pages (never by the LLM): which document the page belongs to.
+    source_doc: str = ""
+    source_file: str = ""
 
     @field_validator("question", "explanation")
     @classmethod

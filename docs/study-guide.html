@@ -207,7 +207,7 @@ html { scroll-behavior: smooth; }
   <div class="hero-facts">
     <div class="fact"><b>2</b><span>features sharing one pipeline</span></div>
     <div class="fact"><b>9</b><span>modules in <code>core/</code></span></div>
-    <div class="fact"><b>43</b><span>automated tests</span></div>
+    <div class="fact"><b>49</b><span>automated tests</span></div>
     <div class="fact"><b>10/10</b><span>retrieval hits on the sample eval</span></div>
   </div>
 </header>
@@ -343,7 +343,8 @@ flowchart TD
   <div class="tbl"><table>
     <thead><tr><th>File</th><th>Responsibility</th></tr></thead>
     <tbody>
-      <tr><td><code>app.py</code></td><td>The Streamlit page: sidebar (upload, document picker, LLM status), the Ask tab and the Quiz tab.</td></tr>
+      <tr><td><code>app.py</code></td><td>The shell shared by every page: sidebar (LLM status, upload, document picker) and the page menu.</td></tr>
+      <tr><td><code>views/</code></td><td>One file per page: <code>ask.py</code>, <code>quiz.py</code>, <code>progress.py</code>.</td></tr>
       <tr><td><code>core/config.py</code></td><td>Reads <code>.env</code> and exposes settings (provider, model, chunk size, top-k, DB folder).</td></tr>
       <tr><td><code>core/ingest.py</code></td><td>PDF → page text → chunks → embeddings → ChromaDB. Also lists and deletes documents.</td></tr>
       <tr><td><code>core/retriever.py</code></td><td>Find the top-k chunks for a query, filter by page, or sample chunks evenly.</td></tr>
@@ -352,6 +353,7 @@ flowchart TD
       <tr><td><code>core/llm.py</code></td><td>One interface for Ollama / Claude / fake: <code>generate()</code>, <code>stream()</code>, <code>health()</code>.</td></tr>
       <tr><td><code>core/schemas.py</code></td><td>The <code>MCQ</code> Pydantic model with all its rules, and the JSON schemas sent to the LLM.</td></tr>
       <tr><td><code>core/prompts.py</code></td><td>Every prompt in one file, with comments explaining each rule.</td></tr>
+      <tr><td><code>core/store.py</code></td><td>SQLite progress database: saves every submitted quiz and computes accuracy per page.</td></tr>
       <tr><td><code>core/export.py</code></td><td>Quiz to JSON, Markdown and PDF.</td></tr>
       <tr><td><code>tests/</code>, <code>eval/</code></td><td>Unit tests (no LLM needed) and the retrieval evaluation script.</td></tr>
     </tbody>
@@ -687,7 +689,7 @@ keep q  only if  reviews[i] == {q.correct}      <span class="c"># exactly one co
   <p>Uses the official <code>anthropic</code> SDK. Claude has no <code>format</code> option here, so the JSON schema is appended to the prompt as text ("Return ONLY a JSON object matching this schema"). Our tolerant <code>_extract_json</code> also strips <code>```json</code> code fences if they appear.</p>
 
   <h3>The fake provider</h3>
-  <p><code>LLM_PROVIDER=fake</code> returns predictable answers built from the prompt itself: questions made from sentences in the excerpts, and a reviewer that "knows" which option was quoted. It means all 43 tests run in about 20 seconds with no GPU and no model. That's a common professional technique: <span class="hl">make the slow, unpredictable dependency swappable</span>.</p>
+  <p><code>LLM_PROVIDER=fake</code> returns predictable answers built from the prompt itself: questions made from sentences in the excerpts, and a reviewer that "knows" which option was quoted. It means all 49 tests run in about 20 seconds with no GPU and no model. That's a common professional technique: <span class="hl">make the slow, unpredictable dependency swappable</span>.</p>
 
   <h3>Thinking models</h3>
   <p>Some models write their reasoning before the answer, between <code>&lt;think&gt;</code> tags. <code>strip_think()</code> removes it from full answers, and <code>_skip_think()</code> swallows it from the stream. <code>OLLAMA_THINK=false</code> asks Ollama to turn thinking off for models that support switching it.</p>
@@ -711,11 +713,25 @@ keep q  only if  reviews[i] == {q.correct}      <span class="c"># exactly one co
   </table></div>
   <p>Example: without <code>ss.ingested</code>, every rerun would see the uploaded file again and re-process it. We store <code>(file name, size)</code> of processed uploads to skip them.</p>
 
+  <h3>Pages: a shell plus views</h3>
+  <p><code>app.py</code> uses <code>st.navigation</code> to build a menu of three pages and runs the selected one with <code>pages.run()</code>. Everything shared (the sidebar, the selected documents) is set up in <code>app.py</code> <i>before</i> the page runs, and stored in <code>session_state</code> (<code>selected_docs</code>, <code>doc_names</code>, <code>max_pages</code>) so each page can read it.</p>
+  <div class="note"><b>A Streamlit trap we avoided.</b> When you switch pages, Streamlit deletes the values of widgets that are no longer on screen, so quiz answers would be lost. Each radio button has an <code>on_change</code> callback that copies the answer into <code>ss.answers</code>, a plain session value that survives, and the radio is re-created from it.</div>
+
+  <h3>The progress database (core/store.py)</h3>
+  <p>When you submit a quiz, <code>store.record_attempt()</code> saves one row in <code>quiz_attempts</code> (date, documents, difficulty, topic, score) and one row per question in <code>question_results</code> (document, page, your answer, correct or not, and the full question as JSON so it can be asked again later).</p>
+  <ul>
+    <li><b>Migrations:</b> the schema is a numbered list; SQLite's <code>PRAGMA user_version</code> remembers how many have run. Later phases add tables by appending to the list, without losing your history.</li>
+    <li><b>A connection per call:</b> simple, and safe with Streamlit's multiple threads.</li>
+    <li><b><code>page_stats()</code></b> groups results by document and page and sorts the weakest first. The Progress page uses it for the "Pages to review" list, and Phase 2 builds "quiz me on my mistakes" on top of it.</li>
+    <li>Questions now carry <code>source_doc</code> and <code>source_file</code>, set by <code>attribute_pages</code>, so a page number is never ambiguous when several PDFs are selected.</li>
+  </ul>
+
   <h3>Layout</h3>
   <ul>
     <li><b>Sidebar</b>: title, LLM status (🟢 / 🔴 with a fix-it message), uploader with progress bar, the "Work on" document picker, and a Manage section to delete a document.</li>
-    <li><b>Ask tab</b>: the conversation in a container <i>above</i> the input box, the citation line, and a "Sources" expander with the retrieved chunks and their similarity scores.</li>
-    <li><b>Quiz tab</b>: a form (number, difficulty, topic, page range), a progress bar while generating, then one radio group per question, Submit → score and explanations, Retake, and the three export buttons.</li>
+    <li><b>Ask page</b>: the conversation in a container <i>above</i> the input box, the citation line, and a "Sources" expander with the retrieved chunks and their similarity scores.</li>
+    <li><b>Quiz page</b>: a form (number, difficulty, topic, page range), a progress bar while generating, then one radio group per question, Submit → score and explanations, Retake, and the three export buttons. Submitting saves the attempt to the progress database.</li>
+    <li><b>Progress page</b>: totals, an accuracy-by-page chart, "pages to review" (below 60%), the quiz history table, and a review of any past quiz.</li>
   </ul>
 
   <h3>Details worth knowing</h3>
@@ -753,7 +769,7 @@ keep q  only if  reviews[i] == {q.correct}      <span class="c"># exactly one co
   <div class="ch-head"><div><div class="eyebrow">Chapter 11 · tests/ + eval/</div><h2>Tests &amp; evaluation</h2></div>
   <label class="studied"><input type="checkbox" data-mark="testing"> Mark as studied</label></div>
 
-  <h3>Unit tests (43, no LLM needed)</h3>
+  <h3>Unit tests (49, no LLM needed)</h3>
   <div class="tbl"><table>
     <thead><tr><th>File</th><th>Checks</th></tr></thead>
     <tbody>
@@ -762,6 +778,7 @@ keep q  only if  reviews[i] == {q.correct}      <span class="c"># exactly one co
       <tr><td><code>test_retrieval.py</code></td><td>ingestion result, re-upload cached, metadata on every hit, Arabic query finds the Arabic page, page filter, spread sampling, full quiz pipeline with the fake LLM</td></tr>
       <tr><td><code>test_llm.py</code></td><td><code>&lt;think&gt;</code> stripping (full and streamed), health check reports a dead server</td></tr>
       <tr><td><code>test_export.py</code></td><td>JSON round-trip, Markdown key order, PDF size and content</td></tr>
+      <tr><td><code>test_store.py</code></td><td>migrations run once, attempts saved and read back, totals, weakest pages first, per-document filter</td></tr>
     </tbody>
   </table></div>
   <p><code>conftest.py</code> sets the provider to <code>fake</code> and gives each test session a <b>temporary ChromaDB</b>, so tests never touch your real data.</p>

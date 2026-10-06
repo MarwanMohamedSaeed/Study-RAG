@@ -154,7 +154,10 @@ def attribute_pages(questions: list[MCQ], chunks: list[dict]) -> list[MCQ]:
     c_emb = model.encode([f"passage: {c['text']}" for c in chunks], normalize_embeddings=True)
     q_emb = model.encode([f"query: {q.question} {q.correct_text}" for q in questions], normalize_embeddings=True)
     best = np.argmax(q_emb @ c_emb.T, axis=1)
-    return [q.model_copy(update={"source_page": chunks[int(b)]["page"]}) for q, b in zip(questions, best)]
+    return [q.model_copy(update={"source_page": chunks[int(b)]["page"],
+                                 "source_doc": chunks[int(b)].get("doc_id", ""),
+                                 "source_file": chunks[int(b)].get("filename", "")})
+            for q, b in zip(questions, best)]
 
 
 def _ask(chunks: list[dict], n: int, difficulty: str, topic: str | None, avoid: list[MCQ]) -> list[MCQ]:

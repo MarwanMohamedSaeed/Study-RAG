@@ -10,7 +10,7 @@
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io/)
 [![ChromaDB](https://img.shields.io/badge/Vector%20DB-ChromaDB-6E44FF)](https://www.trychroma.com/)
 [![Ollama](https://img.shields.io/badge/LLM-Ollama%20%7C%20Claude-000000?logo=ollama&logoColor=white)](https://ollama.com/)
-[![Tests](https://img.shields.io/badge/tests-43%20passing-brightgreen?logo=pytest&logoColor=white)](#-tests--evaluation)
+[![Tests](https://github.com/[YOUR-USERNAME]/studyrag/actions/workflows/tests.yml/badge.svg)](https://github.com/[YOUR-USERNAME]/studyrag/actions/workflows/tests.yml)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](#-docker)
 [![License](https://img.shields.io/badge/license-MIT-blue)](#-license)
 
@@ -44,6 +44,7 @@ All of it runs locally, so your course material never leaves your machine. 🔐
 | 📝 | **MCQ generator** | 5–30 questions, three difficulty levels, an optional topic and an optional page range. |
 | ✅ | **Verified questions** | Questions are validated by Pydantic, de-duplicated, shuffled, and then go through a **blind-solve check** that removes wrong or ambiguous answer keys. |
 | 🎯 | **Interactive quiz** | Answer, submit, and see your score with an explanation and source page for every question. Retake anytime. |
+| 📈 | **Progress tracking** | Every submitted quiz is saved locally. The Progress page shows your history, overall accuracy, accuracy per page, and the pages you should review. |
 | 📤 | **Export** | JSON, Markdown, and a printable PDF with the answer key on a separate page. |
 | 🔒 | **Free & private** | Runs offline with [Ollama](https://ollama.com) on a 4 GB GPU, or switch to the Claude API with one line. |
 
@@ -122,6 +123,8 @@ All settings live in `.env` (see [`.env.example`](.env.example)).
 | ✂️ `CHUNK_SIZE` / `CHUNK_OVERLAP` | `800` / `150` | Chunking, in characters |
 | 🔎 `TOP_K` | `5` | Chunks retrieved per question |
 | 💾 `CHROMA_DIR` | `./data/chroma` | Vector store location |
+| 📈 `DB_PATH` | `./data/studyrag.db` | Quiz history / progress database (SQLite) |
+| 📦 `MODEL_CACHE` | `./models` | Where downloaded models are stored |
 
 ---
 
@@ -199,6 +202,7 @@ flowchart LR
 | 📄 PDF parsing | PyMuPDF |
 | 🧬 Embeddings | sentence-transformers · `intfloat/multilingual-e5-small` |
 | 💾 Vector store | ChromaDB (persistent) |
+| 📈 Progress store | SQLite |
 | 🤖 LLM | Ollama (Qwen3-4B) · Anthropic Claude |
 | 🛡️ Validation | Pydantic v2 |
 | 🧪 Testing | pytest |
@@ -209,7 +213,11 @@ flowchart LR
 
 ```
 studyrag/
-├── 🖥️ app.py                 # Streamlit UI: sidebar, Ask tab, Quiz tab
+├── 🖥️ app.py                 # shell: shared sidebar + page menu
+├── 🧭 views/
+│   ├── ask.py                # 💬 Ask the material
+│   ├── quiz.py               # 📝 MCQ quiz
+│   └── progress.py           # 📈 Progress
 ├── 📦 core/
 │   ├── config.py             # settings from .env
 │   ├── ingest.py             # PDF → chunks → embeddings → ChromaDB
@@ -219,6 +227,7 @@ studyrag/
 │   ├── llm.py                # provider wrapper + health check
 │   ├── schemas.py            # Pydantic models + LLM JSON schemas
 │   ├── prompts.py            # every prompt, with comments
+│   ├── store.py              # SQLite progress database (with migrations)
 │   └── export.py             # JSON / Markdown / PDF export
 ├── 🧪 tests/                 # pytest suite (no LLM needed)
 ├── 📊 eval/
@@ -226,6 +235,7 @@ studyrag/
 │   └── run_eval.py           # retrieval hit rate@k + MRR
 ├── 📄 samples/               # bilingual sample lecture + generator
 ├── 🐳 Dockerfile
+├── ⚙️ .github/workflows/     # CI: tests on every push
 ├── 📋 requirements.txt
 └── ⚙️ .env.example
 ```
@@ -237,7 +247,7 @@ studyrag/
 ## 🧪 Tests & evaluation
 
 ```bash
-pytest -q                            # ✅ 43 tests: chunking, schemas, retrieval, export, quiz pipeline
+pytest -q                            # ✅ 49 tests: chunking, schemas, retrieval, export, store, quiz pipeline
 python eval/run_eval.py              # 📊 retrieval hit rate@5 and MRR on 10 Q&A pairs
 python eval/run_eval.py --answers    # 💬 also print LLM answers next to the gold answers
 ```
@@ -250,7 +260,7 @@ python eval/run_eval.py --answers    # 💬 also print LLM answers next to the g
 |---|:-:|
 | 🎯 Retrieval hit rate@5 | **10 / 10** |
 | 🥇 MRR@5 | **1.00** |
-| ✅ Unit tests | **43 / 43 passing** |
+| ✅ Unit tests | **49 / 49 passing** |
 
 > ⚠️ The sample is a small, clean, 14-chunk lecture, so treat these numbers as a regression check, not a benchmark. Add your own course questions to `eval/qa_pairs.json` to measure real-world performance.
 
@@ -280,11 +290,12 @@ python eval/run_eval.py --answers    # 💬 also print LLM answers next to the g
 
 ## 🗺️ Roadmap
 
-- [ ] 🖼️ Built-in OCR for scanned PDFs
-- [ ] 📊 Support for PowerPoint (`.pptx`) and Word (`.docx`)
-- [ ] 🔀 Hybrid search (BM25 + vectors) with re-ranking
-- [ ] 🃏 Flashcards with spaced repetition
-- [ ] 📈 Quiz history and weak-topic tracking
+- [x] **Phase 0 · Foundation**: ⚙️ CI · 📈 progress database + quiz history · 🧭 page menu · 📦 local model cache
+- [ ] **Phase 1 · Study tools**: 📋 cheat sheets · 🌍 Arabic explanations + bilingual glossary · 🧠 concept maps · ⏱️ exam simulation · 📊 PowerPoint / Word
+- [ ] **Phase 2 · Learning loop**: ✍️ true/false, fill-in, short answer · 🎯 weak-spot quizzes · 🃏 flashcards with spaced repetition + Anki export
+- [ ] **Phase 3 · Quality**: 📏 larger evaluation · 🔀 hybrid search + re-ranker · ✅ citation checking
+- [ ] **Phase 4 · New inputs**: 🖼️ OCR for scanned PDFs · 🎥 lecture recordings (Whisper)
+- [ ] **Phase 5 · Online**: ☁️ live demo on Hugging Face Spaces
 
 ## ⚠️ Limitations
 
