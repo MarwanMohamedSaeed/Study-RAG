@@ -46,6 +46,19 @@ def test_language_detection():
     assert rag.detect_language("ما هو بروتوكول TCP؟") == "ar"
 
 
+def test_quiz_material_covers_whole_document(indexed, chroma, monkeypatch):
+    """Regression: a 10-question quiz used to see only the first ~4 pages of a short lecture."""
+    import core.retriever as r
+    from core.mcq import CHUNKS_PER_BATCH, select_chunks
+    monkeypatch.setattr(r, "get_client", lambda *a, **k: chroma)
+    pool = select_chunks([indexed.doc_id], 18, None, None, n_main=2 * CHUNKS_PER_BATCH)
+    planned = [c["page"] for c in pool[:2 * CHUNKS_PER_BATCH]]
+    assert min(planned) <= 2 and max(planned) >= 7      # the two planned batches span the lecture
+    shifted = select_chunks([indexed.doc_id], 18, None, None, n_main=6, phase=0.5)[:6]
+    assert [c["chunk_index"] + 100 * c["page"] for c in shifted] != \
+           [c["chunk_index"] + 100 * c["page"] for c in pool[:6]]  # exam levels sample different chunks
+
+
 def test_quiz_pipeline_with_fake_llm(indexed, chroma, monkeypatch):
     import core.retriever as r
     from core import ingest

@@ -32,7 +32,7 @@ def to_markdown(questions: list[MCQ], title: str = "Quiz") -> str:
         lines.append("")
     lines += ["---", "", "## Answer key", ""]
     for i, q in enumerate(questions, 1):
-        lines.append(f"{i}. **{q.correct}** ({q.correct_text}) - {q.explanation} _(p.{q.source_page})_")
+        lines.append(f"{i}. **{q.correct}** ({q.correct_text}) - {q.explanation} _({q.source_ref})_")
     return "\n".join(lines) + "\n"
 
 
@@ -49,19 +49,51 @@ def _html(questions: list[MCQ], title: str) -> str:
     parts.append("<h2 style='page-break-before: always'>Answer key</h2>")
     for i, q in enumerate(questions, 1):
         parts.append(f"<p class='key' dir='{_dir(q.explanation)}'><b>{i}. {q.correct}</b> &#8212; "
-                     f"{e(q.explanation)} <i>(p.{q.source_page})</i></p>")
+                     f"{e(q.explanation)} <i>({q.source_ref})</i></p>")
     return "".join(parts)
 
 
+QUIZ_CSS = ("body {font-size: 11pt;} h1 {font-size: 18pt;} h2 {font-size: 15pt;} .meta {color: #555;}"
+            ".q {margin-bottom: 10pt;} .opt {margin: 1pt 0 1pt 16pt;} .key {margin: 3pt 0;}")
+NOTES_CSS = ("body {font-size: 10.5pt;} h1 {font-size: 17pt;} h2 {font-size: 13pt; margin-top: 10pt;} "
+             "li {margin-bottom: 2pt;} table {border-collapse: collapse;} td, th {border: 1px solid #999; padding: 3pt;}")
+
+
 def to_pdf(questions: list[MCQ], title: str = "Quiz") -> bytes:
+    return html_to_pdf(_html(questions, title), QUIZ_CSS)
+
+
+def markdown_to_pdf(md_text: str, title: str) -> bytes:
+    """Cheat sheets and explanations: Markdown -> HTML -> paginated A4 PDF."""
+    import markdown
+    body = markdown.markdown(md_text, extensions=["tables", "sane_lists"])
+    return html_to_pdf(f"<h1>{html.escape(title)}</h1><div dir='{_dir(md_text)}'>{body}</div>", NOTES_CSS)
+
+
+def glossary_csv(terms) -> bytes:
+    """UTF-8 with BOM so Excel shows the Arabic columns correctly."""
+    import csv
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Term", "Arabic", "Definition (English)", "Definition (Arabic)", "Source"])
+    for t in terms:
+        w.writerow([t.term, t.arabic, t.definition_en, t.definition_ar, t.ref])
+    return ("﻿" + buf.getvalue()).encode("utf-8")
+
+
+def glossary_markdown(terms, title: str) -> str:
+    rows = [f"| **{t.term}** | {t.arabic} | {t.definition_en} | {t.definition_ar} | {t.ref} |" for t in terms]
+    return "\n".join([f"# {title}", "", "| Term | Arabic | Definition | التعريف | Source |",
+                      "|---|---|---|---|---|", *rows, ""])
+
+
+def html_to_pdf(html_text: str, css: str) -> bytes:
     font = next((p for p in _FONT_CANDIDATES if p.exists()), None)
-    css = ("body {font-size: 11pt;} h1 {font-size: 18pt;} h2 {font-size: 15pt;} .meta {color: #555;}"
-           ".q {margin-bottom: 10pt;} .opt {margin: 1pt 0 1pt 16pt;} .key {margin: 3pt 0;}")
     archive = None
     if font:
         archive = fitz.Archive(str(font.parent))
         css = f"@font-face {{font-family: qf; src: url({font.name});}} * {{font-family: qf;}} " + css
-    story = fitz.Story(html=_html(questions, title), user_css=css, archive=archive)
+    story = fitz.Story(html=html_text, user_css=css, archive=archive)
     buf = io.BytesIO()
     writer = fitz.DocumentWriter(buf)
     mediabox = fitz.paper_rect("a4")

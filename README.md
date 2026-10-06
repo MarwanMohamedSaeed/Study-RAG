@@ -37,7 +37,7 @@ All of it runs locally, so your course material never leaves your machine. 🔐
 
 | | Feature | Details |
 |:-:|---|---|
-| 📄 | **Smart ingestion** | Upload multiple PDFs with a progress bar. Chunking is page-aware, so every chunk keeps its page number. Scanned or empty pages are detected with a clear warning, and re-uploading a file reuses its existing index. |
+| 📄 | **Smart ingestion** | Upload **PDF, PowerPoint and Word** files with a progress bar. Citations point to the right place: *p.3* in a PDF, *slide 4* in a deck (speaker notes and tables included), *part 2* in a Word file (split at headings). Scanned or empty pages are detected with a clear warning, and re-uploading a file reuses its index. |
 | 💬 | **Ask the material** | Retrieval-augmented Q&A with inline citations like `[lecture.pdf p.7]` and an expandable **Sources** panel. When the answer isn't in your slides, it says so instead of guessing. |
 | 🌐 | **Bilingual** | Ask in Arabic or English and get the answer in the same language, even when the slides are in the other one. Arabic is displayed right-to-left. |
 | 🧠 | **Conversation memory** | Follow-up questions such as *"and what about UDP?"* understand the earlier context. |
@@ -45,6 +45,11 @@ All of it runs locally, so your course material never leaves your machine. 🔐
 | ✅ | **Verified questions** | Questions are validated by Pydantic, de-duplicated, shuffled, and then go through a **blind-solve check** that removes wrong or ambiguous answer keys. |
 | 🎯 | **Interactive quiz** | Answer, submit, and see your score with an explanation and source page for every question. Retake anytime. |
 | 📈 | **Progress tracking** | Every submitted quiz is saved locally. The Progress page shows your history, overall accuracy, accuracy per page, and the pages you should review. |
+| 📋 | **Cheat sheets** | A one-page summary of a lecture (key ideas, definitions, numbers & formulas, likely exam points), every bullet cited. Long lectures are summarised in two steps. Export to Markdown or PDF. |
+| 🌍 | **Explain a page** | Pick a page or slide and get a simple explanation **in Arabic or English** next to the original, with technical terms kept in English. |
+| 📖 | **Bilingual glossary** | Key terms with an Arabic translation and definitions in both languages, searchable, exportable to CSV (opens correctly in Excel) or Markdown. |
+| 🧠 | **Concept map** | The lecture's main concepts and how they relate, drawn as a diagram with source pages; export as Mermaid for Notion, Obsidian or GitHub. |
+| ⏱️ | **Exam simulation** | Several lectures, a difficulty mix, a live countdown that auto-submits at zero, and a report by difficulty and weak pages. |
 | 📤 | **Export** | JSON, Markdown, and a printable PDF with the answer key on a separate page. |
 | 🔒 | **Free & private** | Runs offline with [Ollama](https://ollama.com) on a 4 GB GPU, or switch to the Claude API with one line. |
 
@@ -92,7 +97,7 @@ copy .env.example .env             # macOS / Linux: cp .env.example .env
 streamlit run app.py
 ```
 
-🌐 Open **http://localhost:8501** and upload a PDF. You can start with the included bilingual sample, [`samples/networks_lecture.pdf`](samples/networks_lecture.pdf).
+🌐 Open **http://localhost:8501** and upload a lecture (PDF, PowerPoint or Word). You can start with the included bilingual sample, [`samples/networks_lecture.pdf`](samples/networks_lecture.pdf).
 
 > ℹ️ The first launch downloads the embedding model (~470 MB). After that, everything works **offline**.
 
@@ -217,17 +222,22 @@ studyrag/
 ├── 🧭 views/
 │   ├── ask.py                # 💬 Ask the material
 │   ├── quiz.py               # 📝 MCQ quiz
-│   └── progress.py           # 📈 Progress
+│   ├── study.py              # 📋 cheat sheet, explain, glossary, concept map
+│   ├── exam.py               # ⏱️ exam simulation
+│   ├── progress.py           # 📈 Progress
+│   └── ui.py                 # shared helpers (right-to-left Markdown, progress bars)
 ├── 📦 core/
 │   ├── config.py             # settings from .env
-│   ├── ingest.py             # PDF → chunks → embeddings → ChromaDB
+│   ├── ingest.py             # PDF / PPTX / DOCX → chunks → embeddings → ChromaDB
 │   ├── retriever.py          # top-k search, page filters, even sampling
 │   ├── rag.py                # Q&A: language detection, history, refusal
 │   ├── mcq.py                # MCQ generation, validation, de-dup, verification
 │   ├── llm.py                # provider wrapper + health check
 │   ├── schemas.py            # Pydantic models + LLM JSON schemas
 │   ├── prompts.py            # every prompt, with comments
-│   ├── store.py              # SQLite progress database (with migrations)
+│   ├── study.py              # cheat sheet, page explanation, glossary, concept map
+│   ├── exam.py               # mixed-difficulty exams + report
+│   ├── store.py              # SQLite progress database + study-material cache (with migrations)
 │   └── export.py             # JSON / Markdown / PDF export
 ├── 🧪 tests/                 # pytest suite (no LLM needed)
 ├── 📊 eval/
@@ -247,7 +257,7 @@ studyrag/
 ## 🧪 Tests & evaluation
 
 ```bash
-pytest -q                            # ✅ 49 tests: chunking, schemas, retrieval, export, store, quiz pipeline
+pytest -q                            # ✅ 72 tests: chunking, PPTX/DOCX, schemas, retrieval, study tools, exam, store
 python eval/run_eval.py              # 📊 retrieval hit rate@5 and MRR on 10 Q&A pairs
 python eval/run_eval.py --answers    # 💬 also print LLM answers next to the gold answers
 ```
@@ -260,7 +270,7 @@ python eval/run_eval.py --answers    # 💬 also print LLM answers next to the g
 |---|:-:|
 | 🎯 Retrieval hit rate@5 | **10 / 10** |
 | 🥇 MRR@5 | **1.00** |
-| ✅ Unit tests | **49 / 49 passing** |
+| ✅ Unit tests | **72 / 72 passing** |
 
 > ⚠️ The sample is a small, clean, 14-chunk lecture, so treat these numbers as a regression check, not a benchmark. Add your own course questions to `eval/qa_pairs.json` to measure real-world performance.
 
@@ -272,6 +282,11 @@ python eval/run_eval.py --answers    # 💬 also print LLM answers next to the g
 |---|:-:|
 | 💬 Chat answer | ~4–8 s |
 | 📝 Quiz question (incl. verification) | ~10–25 s |
+| 📋 Cheat sheet (10-page lecture) | ~80 s, then instant (cached) |
+| 🌍 Explain a page | ~60 s |
+| 📖 Glossary (10-page lecture) | ~2.5 min |
+| 🧠 Concept map | 1–3 min |
+| ⏱️ Preparing a 10-question exam | ~3–4 min |
 
 ---
 
@@ -291,7 +306,7 @@ python eval/run_eval.py --answers    # 💬 also print LLM answers next to the g
 ## 🗺️ Roadmap
 
 - [x] **Phase 0 · Foundation**: ⚙️ CI · 📈 progress database + quiz history · 🧭 page menu · 📦 local model cache
-- [ ] **Phase 1 · Study tools**: 📋 cheat sheets · 🌍 Arabic explanations + bilingual glossary · 🧠 concept maps · ⏱️ exam simulation · 📊 PowerPoint / Word
+- [x] **Phase 1 · Study tools**: 📋 cheat sheets · 🌍 Arabic explanations + bilingual glossary · 🧠 concept maps · ⏱️ exam simulation · 📊 PowerPoint / Word
 - [ ] **Phase 2 · Learning loop**: ✍️ true/false, fill-in, short answer · 🎯 weak-spot quizzes · 🃏 flashcards with spaced repetition + Anki export
 - [ ] **Phase 3 · Quality**: 📏 larger evaluation · 🔀 hybrid search + re-ranker · ✅ citation checking
 - [ ] **Phase 4 · New inputs**: 🖼️ OCR for scanned PDFs · 🎥 lecture recordings (Whisper)
@@ -301,6 +316,8 @@ python eval/run_eval.py --answers    # 💬 also print LLM answers next to the g
 
 - 🤏 Small local models occasionally cite a neighbouring page or write an ambiguous question. The Sources panel and the blind-solve check reduce this but don't eliminate it; Claude gives the best quality.
 - 🖼️ Scanned PDFs need OCR before upload.
+- 🌍 Arabic glossary translations come from a 4B model: most are right, but some technical terms get a loose translation (e.g. *well-known ports*). Check unfamiliar ones.
+- 🧠 Concept maps from a small model tend to be several small groups rather than one connected map, and an arrow is occasionally reversed.
 - ⏳ Quiz generation time grows with the number of questions.
 
 ---

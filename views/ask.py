@@ -1,35 +1,24 @@
 """Ask the material: grounded Q&A with page citations."""
-import re
-
 import streamlit as st
 
 from core import llm, rag
 from core.llm import LLMError
+from views.ui import markdown as _markdown
 
 ss = st.session_state
 selected = ss.selected_docs
 
 
 def _cite_line(answer: str, sources: list[dict]) -> str:
-    cited = re.findall(r"\[([^\[\]]+? p\.\d+)\]", answer)
-    refs = list(dict.fromkeys(cited)) or list(dict.fromkeys(f"{s['filename']} p.{s['page']}" for s in sources))
+    cited = rag.CITE_RE.findall(answer)
+    refs = list(dict.fromkeys(cited)) or list(dict.fromkeys(f"{s['filename']} {s['ref']}" for s in sources))
     return "📎 " + " · ".join(refs)
-
-
-def _markdown(text: str, target=st):
-    """Arabic answers read right-to-left."""
-    if rag.detect_language(text) == "ar":
-        # keep "[file.pdf p.5]" as an isolated LTR run so bidi doesn't flip its brackets
-        text = re.sub(r"(\[[^\[\]]+? p\.\d+\])", r'<bdi dir="ltr">\1</bdi>', text)
-        target.markdown(f'<div dir="rtl" style="text-align: right">\n\n{text}\n\n</div>', unsafe_allow_html=True)
-    else:
-        target.markdown(text)
 
 
 def _render_sources(sources: list[dict]):
     with st.expander(f"Sources ({len(sources)} retrieved chunks)"):
         for i, s in enumerate(sources, 1):
-            st.markdown(f"**{i}. {s['filename']} — page {s['page']}**  ·  similarity {s['score']:.2f}")
+            st.markdown(f"**{i}. {s['filename']} — {s['ref']}**  ·  similarity {s['score']:.2f}")
             st.text(s["text"])
 
 

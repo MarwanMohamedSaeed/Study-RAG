@@ -42,6 +42,20 @@ MIGRATIONS = [
     );
     CREATE INDEX ix_results_doc_page ON question_results(doc_id, source_page);
     """,
+    # 2: exam mode + slide/part units + cache for generated study material
+    """
+    ALTER TABLE quiz_attempts ADD COLUMN mode TEXT NOT NULL DEFAULT 'quiz';   -- quiz | exam
+    ALTER TABLE quiz_attempts ADD COLUMN duration_s INTEGER;                  -- time taken (exams)
+    ALTER TABLE question_results ADD COLUMN source_unit TEXT NOT NULL DEFAULT 'page';
+    ALTER TABLE question_results ADD COLUMN difficulty TEXT;                  -- per question (exams mix them)
+    CREATE TABLE study_notes (
+        key         TEXT PRIMARY KEY,          -- kind + documents + options, see note_key()
+        kind        TEXT NOT NULL,             -- cheatsheet | glossary | conceptmap | explain
+        doc_ids     TEXT NOT NULL,             -- JSON list
+        content     TEXT NOT NULL,             -- markdown or JSON
+        created_at  TEXT NOT NULL
+    );
+    """,
 ]
 
 
@@ -63,27 +77,52 @@ def _migrate(conn: sqlite3.Connection) -> None:
             conn.execute(f"PRAGMA user_version = {i}")
 
 
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 def record_attempt(questions: list[MCQ], answers: list[str | None], doc_ids: list[str],
                    doc_names: list[str], difficulty: str | None = None, topic: str | None = None,
-                   path: str | None = None) -> int:
-    """Save one submitted quiz. Returns the attempt id."""
+                   path: str | None = None, mode: str = "quiz", duration_s: int | None = None,
+                   difficulties: list[str] | None = None) -> int:
+    """Save one submitted quiz or exam. Returns the attempt id.
+    `difficulties` gives a per-question level when an exam mixes them."""
     if len(questions) != len(answers):
         raise ValueError("one answer (or None) per question is required")
+    per_q = difficulties or [difficulty] * len(questions)
     score = sum(a == q.correct for q, a in zip(questions, answers))
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     with closing(connect(path)) as conn, conn:
         cur = conn.execute(
-            "INSERT INTO quiz_attempts (created_at, doc_ids, doc_names, difficulty, topic, n_questions, score) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (now, json.dumps(doc_ids), json.dumps(doc_names, ensure_ascii=False), difficulty, topic or None,
-             len(questions), score))
+            "INSERT INTO quiz_attempts (created_at, doc_ids, doc_names, difficulty, topic, n_questions, score, "
+            "mode, duration_s) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (_now(), json.dumps(doc_ids), json.dumps(doc_names, ensure_ascii=False), difficulty, topic or None,
+             len(questions), score, mode, duration_s))
         attempt_id = cur.lastrowid
         conn.executemany(
-            "INSERT INTO question_results (attempt_id, doc_id, filename, source_page, question, correct, chosen, "
-            "is_correct, mcq_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            [(attempt_id, q.source_doc or None, q.source_file or None, q.source_page, q.question, q.correct, a,
-              int(a == q.correct), q.model_dump_json()) for q, a in zip(questions, answers)])
+            "INSERT INTO question_results (attempt_id, doc_id, filename, source_page, source_unit, question, "
+            "correct, chosen, is_correct, difficulty, mcq_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [(attempt_id, q.source_doc or None, q.source_file or None, q.source_page, q.source_unit, q.question,
+              q.correct, a, int(a == q.correct), d, q.model_dump_json())
+             for q, a, d in zip(questions, answers, per_q)])
     return attempt_id
+
+
+# ---------------------------------------------------------------- cached study material
+def note_key(kind: str, doc_ids: list[str], **options) -> str:
+    opts = ",".join(f"{k}={v}" for k, v in sorted(options.items()) if v not in (None, ""))
+    return f"{kind}|{','.join(sorted(doc_ids))}|{opts}"
+
+
+def get_note(key: str, path: str | None = None) -> str | None:
+    with closing(connect(path)) as conn:
+        row = conn.execute("SELECT content FROM study_notes WHERE key = ?", (key,)).fetchone()
+    return row["content"] if row else None
+
+
+def save_note(key: str, kind: str, doc_ids: list[str], content: str, path: str | None = None) -> None:
+    with closing(connect(path)) as conn, conn:
+        conn.execute("INSERT OR REPLACE INTO study_notes (key, kind, doc_ids, content, created_at) "
+                     "VALUES (?, ?, ?, ?, ?)", (key, kind, json.dumps(sorted(doc_ids)), content, _now()))
 
 
 def list_attempts(limit: int = 100, path: str | None = None) -> list[dict]:
@@ -109,13 +148,13 @@ def totals(path: str | None = None) -> dict:
 
 def page_stats(doc_ids: list[str] | None = None, path: str | None = None) -> list[dict]:
     """Accuracy per (document, page), weakest first. The basis for weak-spot tracking."""
-    sql = ("SELECT doc_id, filename, source_page AS page, COUNT(*) AS answered, SUM(is_correct) AS correct "
-           "FROM question_results WHERE source_page IS NOT NULL")
+    sql = ("SELECT doc_id, filename, source_page AS page, source_unit AS unit, COUNT(*) AS answered, "
+           "SUM(is_correct) AS correct FROM question_results WHERE source_page IS NOT NULL")
     params: list = []
     if doc_ids:
         sql += f" AND doc_id IN ({','.join('?' * len(doc_ids))})"
         params += doc_ids
-    sql += " GROUP BY doc_id, filename, source_page"
+    sql += " GROUP BY doc_id, filename, source_page, source_unit"
     with closing(connect(path)) as conn:
         rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
     for r in rows:

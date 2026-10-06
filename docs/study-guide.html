@@ -178,7 +178,7 @@ html { scroll-behavior: smooth; }
 
 <nav class="rail" aria-label="Chapters">
   <details id="railbox" open>
-    <summary><span>Chapters</span><span class="progress-label" id="progLabel">0 / 13 studied</span></summary>
+    <summary><span>Chapters</span><span class="progress-label" id="progLabel">0 / 14 studied</span></summary>
     <div class="progress" aria-hidden="true"><span id="progBar"></span></div>
     <ol id="toc">
       <li><a href="#big-picture">The big picture<span class="tick">✓</span></a></li>
@@ -191,6 +191,7 @@ html { scroll-behavior: smooth; }
       <li><a href="#llm">The LLM wrapper<span class="tick">✓</span></a></li>
       <li><a href="#app">The Streamlit app<span class="tick">✓</span></a></li>
       <li><a href="#export">Export<span class="tick">✓</span></a></li>
+      <li><a href="#studytools">Study tools &amp; exams<span class="tick">✓</span></a></li>
       <li><a href="#testing">Tests &amp; evaluation<span class="tick">✓</span></a></li>
       <li><a href="#lessons">Bugs we fixed<span class="tick">✓</span></a></li>
       <li><a href="#selftest">Self-test &amp; glossary<span class="tick">✓</span></a></li>
@@ -207,7 +208,7 @@ html { scroll-behavior: smooth; }
   <div class="hero-facts">
     <div class="fact"><b>2</b><span>features sharing one pipeline</span></div>
     <div class="fact"><b>9</b><span>modules in <code>core/</code></span></div>
-    <div class="fact"><b>49</b><span>automated tests</span></div>
+    <div class="fact"><b>72</b><span>automated tests</span></div>
     <div class="fact"><b>10/10</b><span>retrieval hits on the sample eval</span></div>
   </div>
 </header>
@@ -353,6 +354,8 @@ flowchart TD
       <tr><td><code>core/llm.py</code></td><td>One interface for Ollama / Claude / fake: <code>generate()</code>, <code>stream()</code>, <code>health()</code>.</td></tr>
       <tr><td><code>core/schemas.py</code></td><td>The <code>MCQ</code> Pydantic model with all its rules, and the JSON schemas sent to the LLM.</td></tr>
       <tr><td><code>core/prompts.py</code></td><td>Every prompt in one file, with comments explaining each rule.</td></tr>
+      <tr><td><code>core/study.py</code></td><td>Cheat sheet, page explanation, bilingual glossary, concept map (cached in the database).</td></tr>
+      <tr><td><code>core/exam.py</code></td><td>Mixed-difficulty exams across lectures, and the exam report.</td></tr>
       <tr><td><code>core/store.py</code></td><td>SQLite progress database: saves every submitted quiz and computes accuracy per page.</td></tr>
       <tr><td><code>core/export.py</code></td><td>Quiz to JSON, Markdown and PDF.</td></tr>
       <tr><td><code>tests/</code>, <code>eval/</code></td><td>Unit tests (no LLM needed) and the retrieval evaluation script.</td></tr>
@@ -689,7 +692,7 @@ keep q  only if  reviews[i] == {q.correct}      <span class="c"># exactly one co
   <p>Uses the official <code>anthropic</code> SDK. Claude has no <code>format</code> option here, so the JSON schema is appended to the prompt as text ("Return ONLY a JSON object matching this schema"). Our tolerant <code>_extract_json</code> also strips <code>```json</code> code fences if they appear.</p>
 
   <h3>The fake provider</h3>
-  <p><code>LLM_PROVIDER=fake</code> returns predictable answers built from the prompt itself: questions made from sentences in the excerpts, and a reviewer that "knows" which option was quoted. It means all 49 tests run in about 20 seconds with no GPU and no model. That's a common professional technique: <span class="hl">make the slow, unpredictable dependency swappable</span>.</p>
+  <p><code>LLM_PROVIDER=fake</code> returns predictable answers built from the prompt itself: questions made from sentences in the excerpts, and a reviewer that "knows" which option was quoted. It means all 72 tests run in about 20 seconds with no GPU and no model. That's a common professional technique: <span class="hl">make the slow, unpredictable dependency swappable</span>.</p>
 
   <h3>Thinking models</h3>
   <p>Some models write their reasoning before the answer, between <code>&lt;think&gt;</code> tags. <code>strip_think()</code> removes it from full answers, and <code>_skip_think()</code> swallows it from the stream. <code>OLLAMA_THINK=false</code> asks Ollama to turn thinking off for models that support switching it.</p>
@@ -764,12 +767,58 @@ keep q  only if  reviews[i] == {q.correct}      <span class="c"># exactly one co
 
 <hr>
 
+
+<!-- ============================================================ 10b -->
+<section class="chapter" id="studytools" data-ch="studytools">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 11 · core/study.py + core/exam.py</div><h2>Study tools &amp; exams (Phase 1)</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="studytools"> Mark as studied</label></div>
+
+  <h3>PowerPoint and Word: the "unit" idea</h3>
+  <p>A citation has to point somewhere a student can find. PDFs have pages, decks have slides, but Word files have no fixed pages (they depend on the printer and font). So every document gets a <span class="hl">unit</span>: <code>page</code>, <code>slide</code> or <code>part</code>, chosen by file extension in <code>ingest.UNITS</code>. One helper, <code>fmt_ref(unit, n)</code>, produces <code>p.3</code>, <code>slide 3</code> or <code>part 3</code>, and every screen uses it.</p>
+  <ul>
+    <li><b>Slides</b> (<code>extract_slides</code>): text from every shape, grouped shapes and tables, plus the <b>speaker notes</b>. In testing, "the algorithm behind RIP" was only in the notes, and it was answered correctly with <code>[routing.pptx slide 1]</code>.</li>
+    <li><b>Word</b> (<code>extract_docx_parts</code>): walks paragraphs and tables in document order; a new part starts at every heading, or after ~3,000 characters.</li>
+    <li>Documents indexed before this change have no unit in their metadata, so the retriever defaults to <code>page</code>. Old data keeps working.</li>
+  </ul>
+
+  <h3>Cheat sheet: map-reduce summarisation</h3>
+  <p>A 4B model can't read a whole long lecture at once. If the material is under 9,000 characters it goes to the LLM in one call. Otherwise it's done in two steps:</p>
+  <ol class="steps">
+    <li><div><b>Map.</b> Each ~6,000-character batch becomes short cited bullet notes (<code>NOTES_SYSTEM</code>).</div></li>
+    <li><div><b>Reduce.</b> The notes become one cheat sheet with four fixed sections (<code>CHEATSHEET_SYSTEM</code>), still with citations.</div></li>
+  </ol>
+  <p>The result is <b>cached</b> in the database (<code>study_notes</code> table) under a key built from the tool, the document and the options. Opening it again is instant; "Regenerate" bypasses the cache.</p>
+
+  <h3>Explain a page: getting real Arabic out of a small model</h3>
+  <p><code>page_text()</code> rebuilds the page from its chunks, removing the overlapping text between neighbours. The explanation streams next to the original.</p>
+  <div class="warn"><b>Bug we hit.</b> Asked to "write in Arabic but keep technical terms in English", the model did the opposite: English text with Arabic in parentheses, plus one wrong translation. Fix: put the language rule <b>first</b> in the system prompt with a concrete example, and end the request with a short reminder <b>written in Arabic</b> (<code>ARABIC_REMINDER</code>). Small models follow the last instruction, and the one in the target language, most reliably. The result went to 85–90% Arabic text, with correct terms such as "three-way handshake (المصافحة الثلاثية)".</div>
+
+  <h3>Glossary and concept map: same pattern as the MCQs</h3>
+  <p>Both use JSON from the LLM, validated by Pydantic before display:</p>
+  <ul>
+    <li><b><code>GlossaryTerm</code></b> requires the translation and the Arabic definition to actually contain Arabic letters. The source page is set by embedding similarity, exactly like MCQ pages.</li>
+    <li><b><code>ConceptMap</code></b> removes duplicate ids, self-loops, duplicate links and links to unknown concepts. If more than a quarter of the concepts have no links, the code retries once and <b>names the unconnected concepts</b> in the retry message; unconnected concepts are then dropped. It's drawn with Graphviz DOT in the browser and can be exported as Mermaid.</li>
+  </ul>
+  <p>The concept map is built from the English cheat sheet rather than the raw lecture, because the cheat sheet is already short and cited. That's one tool reusing another.</p>
+
+  <h3>Exam simulation</h3>
+  <ul>
+    <li><b><code>split_counts</code></b> turns "10 questions, 60% easy / 40% medium" into exact counts using <span class="hl">largest-remainder rounding</span>, so the total always matches (tested for every size from 5 to 40).</li>
+    <li>Each difficulty is generated with the normal MCQ pipeline; then duplicates across levels are removed and the order is shuffled.</li>
+    <li>The countdown is an <code>@st.fragment(run_every=1)</code>: only that small piece re-runs every second, not the whole page. At zero it submits and calls <code>st.rerun(scope="app")</code>. If you were on another page when time ran out, the exam page submits as soon as you come back.</li>
+    <li>The source page is hidden during the exam (it would be a hint) and shown in the review.</li>
+    <li>Saved with <code>mode="exam"</code>, the time used, and each question's difficulty (database migration 2).</li>
+  </ul>
+</section>
+
+<hr>
+
 <!-- ============================================================ 11 -->
 <section class="chapter" id="testing" data-ch="testing">
-  <div class="ch-head"><div><div class="eyebrow">Chapter 11 · tests/ + eval/</div><h2>Tests &amp; evaluation</h2></div>
+  <div class="ch-head"><div><div class="eyebrow">Chapter 12 · tests/ + eval/</div><h2>Tests &amp; evaluation</h2></div>
   <label class="studied"><input type="checkbox" data-mark="testing"> Mark as studied</label></div>
 
-  <h3>Unit tests (49, no LLM needed)</h3>
+  <h3>Unit tests (72, no LLM needed)</h3>
   <div class="tbl"><table>
     <thead><tr><th>File</th><th>Checks</th></tr></thead>
     <tbody>
@@ -778,6 +827,8 @@ keep q  only if  reviews[i] == {q.correct}      <span class="c"># exactly one co
       <tr><td><code>test_retrieval.py</code></td><td>ingestion result, re-upload cached, metadata on every hit, Arabic query finds the Arabic page, page filter, spread sampling, full quiz pipeline with the fake LLM</td></tr>
       <tr><td><code>test_llm.py</code></td><td><code>&lt;think&gt;</code> stripping (full and streamed), health check reports a dead server</td></tr>
       <tr><td><code>test_export.py</code></td><td>JSON round-trip, Markdown key order, PDF size and content</td></tr>
+      <tr><td><code>test_formats.py</code></td><td>slides with tables and speaker notes, Word parts split at headings, slide/part citations end to end</td></tr>
+      <tr><td><code>test_study.py</code></td><td>glossary and concept-map rules, cheat-sheet cache and two-step path, page rebuilding, exam counts and report</td></tr>
       <tr><td><code>test_store.py</code></td><td>migrations run once, attempts saved and read back, totals, weakest pages first, per-document filter</td></tr>
     </tbody>
   </table></div>
@@ -799,7 +850,7 @@ MRR      = (1 + 1 + 0.5 + 0) / 4 = 0.625</code></pre>
 
 <!-- ============================================================ 12 -->
 <section class="chapter" id="lessons" data-ch="lessons">
-  <div class="ch-head"><div><div class="eyebrow">Chapter 12</div><h2>Bugs we hit and how we fixed them</h2></div>
+  <div class="ch-head"><div><div class="eyebrow">Chapter 13</div><h2>Bugs we hit and how we fixed them</h2></div>
   <label class="studied"><input type="checkbox" data-mark="lessons"> Mark as studied</label></div>
 
   <p>These are real problems from building this project. They make the best interview stories, because each one shows how you think, not just what you built.</p>
@@ -857,7 +908,7 @@ MRR      = (1 + 1 + 0.5 + 0) / 4 = 0.625</code></pre>
 
 <!-- ============================================================ 13 -->
 <section class="chapter" id="selftest" data-ch="selftest">
-  <div class="ch-head"><div><div class="eyebrow">Chapter 13</div><h2>Self-test &amp; glossary</h2></div>
+  <div class="ch-head"><div><div class="eyebrow">Chapter 14</div><h2>Self-test &amp; glossary</h2></div>
   <label class="studied"><input type="checkbox" data-mark="selftest"> Mark as studied</label></div>
 
   <p>Try to answer each question out loud before opening it. These are also the questions an interviewer is likely to ask about this project.</p>
@@ -883,6 +934,8 @@ MRR      = (1 + 1 + 0.5 + 0) / 4 = 0.625</code></pre>
   <details class="qa"><summary>Why the threading lock around the Chroma client?</summary><div class="ans"><p>Streamlit can run two script runs in parallel (a rerun starts while the first is still going). Both tried to create the persistent client at the same time, and one got a half-initialized instance. The lock ensures only one is ever created.</p></div></details>
   <details class="qa"><summary>Explain Streamlit's rerun model and session_state.</summary><div class="ans"><p>Every interaction re-executes the whole script. Normal variables are lost each time; <code>st.session_state</code> keeps per-user values (chat, quiz) across reruns, and <code>@st.cache_resource</code> keeps heavy shared objects (the embedding model) loaded once.</p></div></details>
   <details class="qa"><summary>Hit rate vs MRR?</summary><div class="ans"><p>Hit rate@k: did the right page appear anywhere in the top k? MRR@k: average of 1/rank of the right page, so it also rewards ranking it first. Hit rate tells you "found or not"; MRR tells you "how high".</p></div></details>
+  <details class="qa"><summary>Why do Word files cite "part 2" instead of a page number?</summary><div class="ans"><p>.docx files have no fixed pages: pagination depends on fonts, margins and the printer, so any page number we computed could be wrong. Splitting at headings gives stable, findable sections. Every document has a unit (page / slide / part), and one helper formats all citations.</p></div></details>
+  <details class="qa"><summary>How did you make a 4B model actually answer in Arabic?</summary><div class="ans"><p>The language rule moved to the start of the system prompt with a concrete example, and every Arabic request ends with a short reminder written in Arabic. Small models weigh the last instruction and the target-language text most. We measured the result: 85–90% Arabic letters.</p></div></details>
   <details class="qa"><summary>How would you scale this to 1,000 PDFs?</summary><div class="ans"><p>One collection per PDF means one query per selected document, which gets slow. I'd move to a single collection with <code>doc_id</code> in the metadata and filter with a <code>where</code> clause; consider hybrid search (BM25 + vectors) and a re-ranker for quality; embed on a GPU or in background jobs; and possibly a server-based vector DB.</p></div></details>
   <details class="qa"><summary>What would you improve next?</summary><div class="ans"><p>Built-in OCR for scanned PDFs; .pptx/.docx support; hybrid search and re-ranking; a larger evaluation set from real courses, including answer-quality scoring; flashcards and tracking weak topics over time.</p></div></details>
 

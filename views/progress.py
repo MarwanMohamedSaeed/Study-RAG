@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from core import store
+from core.ingest import fmt_ref
 
 REVIEW_BELOW = 0.6  # pages under 60% correct are flagged for review
 ss = st.session_state
@@ -32,13 +33,13 @@ else:
     df = pd.DataFrame(stats)
     multi_doc = df["doc_id"].nunique() > 1
     df["label"] = df.apply(lambda r: (f"{Path(r['filename'] or '?').stem[:18]} " if multi_doc else "") +
-                           f"p.{r['page']}", axis=1)
+                           fmt_ref(r["unit"] or "page", r["page"]), axis=1)
     df["pct"] = (100 * df["accuracy"]).round(0)
     df["status"] = df["accuracy"].map(lambda a: "Review" if a < REVIEW_BELOW else "OK")
     df["score"] = df.apply(lambda r: f"{r['correct']}/{r['answered']}", axis=1)
     order = df.sort_values(["filename", "page"])["label"].tolist()
     base = alt.Chart(df).encode(
-        y=alt.Y("label:N", sort=order, title=None),
+        y=alt.Y("label:N", sort=order, title=None, axis=alt.Axis(labelLimit=260)),
         x=alt.X("pct:Q", scale=alt.Scale(domain=[0, 100]), title="Correct answers (%)"),
         tooltip=[alt.Tooltip("label:N", title="Page"), alt.Tooltip("score:N", title="Correct"),
                  alt.Tooltip("pct:Q", title="%")])
@@ -60,6 +61,8 @@ st.subheader("Quiz history")
 attempts = store.list_attempts()
 hist = pd.DataFrame([{
     "Date": datetime.fromisoformat(a["created_at"]).astimezone().strftime("%Y-%m-%d %H:%M"),
+    "Type": "⏱️ Exam" if a.get("mode") == "exam" else "📝 Quiz",
+    "Time": f"{a['duration_s'] // 60}:{a['duration_s'] % 60:02d}" if a.get("duration_s") else "",
     "Documents": ", ".join(a["doc_names"]),
     "Difficulty": a["difficulty"] or "",
     "Topic": a["topic"] or "",
@@ -77,4 +80,4 @@ with st.expander("Review a past quiz"):
         mark = "✅" if r["is_correct"] else "❌"
         chosen = r["chosen"] or "no answer"
         st.markdown(f"{mark} **{i}. {r['question']}**  \nYour answer: {chosen} · correct: {r['correct']} · "
-                    f"{r['filename'] or ''} p.{r['source_page']}")
+                    f"{r['filename'] or ''} {fmt_ref(r['source_unit'] or 'page', r['source_page'])}")

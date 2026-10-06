@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from core import config
-from core.ingest import embed_query, get_client
+from core.ingest import embed_query, fmt_ref, get_client
 
 
 def _page_filter(page_range: tuple[int, int] | None) -> dict | None:
@@ -13,10 +13,13 @@ def _page_filter(page_range: tuple[int, int] | None) -> dict | None:
 
 
 def _to_chunk(text: str, meta: dict, distance: float | None = None) -> dict:
+    unit = meta.get("unit", "page")  # documents indexed before Phase 1 have no unit: they were PDFs
     return {
         "text": text,
         "filename": meta.get("filename", "?"),
         "page": int(meta.get("page", 0)),
+        "unit": unit,
+        "ref": fmt_ref(unit, int(meta.get("page", 0))),
         "chunk_index": int(meta.get("chunk_index", 0)),
         "doc_id": meta.get("doc_id", ""),
         # cosine distance -> similarity in [0, 1]-ish; higher is better
@@ -59,10 +62,11 @@ def all_chunks(doc_ids: list[str], page_range: tuple[int, int] | None = None, cl
 
 
 def sample_spread(doc_ids: list[str], n: int, page_range: tuple[int, int] | None = None,
-                  client=None) -> list[dict]:
-    """n chunks spread evenly across the document(s) - used for MCQs without a topic."""
+                  client=None, phase: float = 0.0) -> list[dict]:
+    """n chunks spread evenly across the document(s) - used for MCQs without a topic.
+    `phase` (0..1) shifts the sampling points, so two calls can pick different chunks."""
     chunks = all_chunks(doc_ids, page_range, client)
     if len(chunks) <= n:
         return chunks
     step = len(chunks) / n
-    return [chunks[int(i * step)] for i in range(n)]
+    return [chunks[int((i + phase) * step) % len(chunks)] for i in range(n)]

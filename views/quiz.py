@@ -68,11 +68,11 @@ if ss.quiz:
                  key=key, disabled=ss.submitted, on_change=_remember, args=(i, key))
         if ss.submitted:
             if saved == q.correct:
-                st.success(f"Correct - {q.explanation}  _(source: page {q.source_page})_")
+                st.success(f"Correct - {q.explanation}  _(source: {q.source_ref})_")
             else:
                 picked = "no answer" if saved is None else f"you chose {saved}"
                 st.error(f"Answer: **{q.correct}) {q.correct_text}** ({picked}). {q.explanation}  "
-                         f"_(source: page {q.source_page})_")
+                         f"_(source: {q.source_ref})_")
 
     c1, c2, _ = st.columns([1, 1, 4])
     if not ss.submitted and c1.button("Submit answers", type="primary"):

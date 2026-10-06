@@ -171,10 +171,33 @@ def _claude_stream(system, user, temperature, max_tokens):
 # --------------------------------------------------------------------------- Fake (offline)
 def _fake(system, user, json_schema):
     """Deterministic stub: echoes context for Q&A, builds trivially-valid MCQs from excerpts."""
+    labels = re.findall(r"\[([^\[\]\n]*?(?:p\.|slide |part )\d+)\]", user)
+    props = (json_schema or {}).get("properties", {})
     if json_schema is None:
-        m = re.search(r"\[(.+? p\.\d+)\]", user)
-        return f"(fake LLM) Based on the material [{m.group(1)}]." if m else "(fake LLM) Not found."
-    if "reviews" in json_schema.get("properties", {}):
+        if "cheat sheet" in system or "study notes" in system:
+            refs = list(dict.fromkeys(labels))[:3] or ["p.1"]
+            return "\n".join(["## Key ideas", *[f"- (fake LLM) key idea from the material [{r}]" for r in refs],
+                              "## Definitions", f"- (fake LLM) a definition [{refs[0]}]",
+                              "## Numbers & formulas", "- None in this material", "## Likely exam points",
+                              f"- (fake LLM) an exam point [{refs[-1]}]"])
+        if "tutor" in system:
+            return "1. **The main idea**: (fake LLM) explanation of the page.\n\n3. **Remember for the exam**: - one point"
+        return f"(fake LLM) Based on the material [{labels[0]}]." if labels else "(fake LLM) Not found."
+    if "terms" in props:
+        # one term per excerpt: its first two words, with Arabic placeholders that pass validation
+        terms = []
+        for label, text in re.findall(r"\[([^\]]+)\]\n(.+)", user)[:8]:
+            words = re.findall(r"[A-Za-z][A-Za-z0-9-]+", text)
+            if len(words) >= 2:
+                terms.append({"term": " ".join(words[:2]), "arabic": "مصطلح", "definition_en": text[:120],
+                              "definition_ar": "تعريف المصطلح من المحاضرة", "page": int(re.findall(r"\d+", label)[-1])})
+        return json.dumps({"terms": terms})
+    if "nodes" in props:
+        bullets = re.findall(r"^- (.+?)(?: \[([^\]]+)\])?$", user, flags=re.M)[:6]
+        nodes = [{"id": f"c{i}", "label": f"Concept {i + 1}", "page": 1} for i in range(max(3, len(bullets)))]
+        edges = [{"source": f"c{i}", "target": f"c{i + 1}", "label": "relates to"} for i in range(len(nodes) - 1)]
+        return json.dumps({"nodes": nodes, "edges": edges})
+    if "reviews" in props:
         # verification: the correct option is the one whose text the fake question quotes
         reviews = []
         for num, q_text, opts in re.findall(r"^(\d+)\. (.+)\n((?:   [A-D]\) .*\n?)+)", user, flags=re.M):
@@ -182,7 +205,7 @@ def _fake(system, user, json_schema):
             reviews.append({"number": int(num), "correct_options": found})
         return json.dumps({"reviews": reviews})
     n = int((re.search(r"exactly (\d+) ", user) or [0, 3])[1])
-    excerpts = re.findall(r"\(page (\d+)\)\n(.+?)(?=\n--- Excerpt|\n\nReturn JSON|\Z)", user, flags=re.S)
+    excerpts = re.findall(r"\((?:page|slide|part) (\d+)\)\n(.+?)(?=\n--- Excerpt|\n\nReturn JSON|\Z)", user, flags=re.S)
     sentences = [(p, " ".join(s.split())) for p, t in excerpts for s in re.split(r"(?<=[.!?؟])\s+", t) if len(s.strip()) > 25]
     sentences = sentences or [("1", "placeholder sentence for the fake model")]
     offset = len(re.findall(r"^- ", user, flags=re.M))  # skip sentences already asked about

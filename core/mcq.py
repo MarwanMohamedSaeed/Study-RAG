@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from core import llm, prompts
 from core.ingest import get_embedder
-from core.retriever import retrieve, sample_spread
+from core.retriever import all_chunks, retrieve, sample_spread
 from core.schemas import LETTERS, LLM_MCQ_SCHEMA, LLM_VERIFY_SCHEMA, MCQ
 
 BATCH_QUESTIONS = 5       # questions requested per LLM call (small models do better in small batches)
@@ -101,8 +101,12 @@ def dedupe(questions: list[MCQ], existing: list[MCQ] | None = None,
 
 # --------------------------------------------------------------------------- generation
 def select_chunks(doc_ids: list[str], n_needed: int, topic: str | None,
-                  page_range: tuple[int, int] | None) -> list[dict]:
-    """Topic given -> most relevant chunks; otherwise chunks spread across the document."""
+                  page_range: tuple[int, int] | None, n_main: int | None = None, phase: float = 0.0) -> list[dict]:
+    """Topic given -> most relevant chunks; otherwise chunks spread across the document.
+
+    Without a topic, the first `n_main` chunks (used by the planned batches) are spread evenly over
+    the whole document; the other chunks follow, for extra rounds only. Taking all chunks in reading
+    order instead would make a short quiz cover only the first few pages."""
     if topic and topic.strip():
         hits = retrieve(topic, doc_ids, k=n_needed, page_range=page_range)
         if not hits:
@@ -110,13 +114,20 @@ def select_chunks(doc_ids: list[str], n_needed: int, topic: str | None,
         # On short documents top-k is "everything"; keep only chunks close to the best match.
         relevant = [h for h in hits if h["score"] >= hits[0]["score"] - TOPIC_SCORE_MARGIN]
         return relevant if len(relevant) >= CHUNKS_PER_BATCH else hits[:CHUNKS_PER_BATCH]
-    return sample_spread(doc_ids, n_needed, page_range)
+    main = sample_spread(doc_ids, n_main or n_needed, page_range, phase=phase)
+    used = {(c["doc_id"], c["page"], c["chunk_index"]) for c in main}
+    rest = [c for c in all_chunks(doc_ids, page_range) if (c["doc_id"], c["page"], c["chunk_index"]) not in used]
+    return (main + rest)[:max(n_needed, len(main))]
+
+
+def _excerpts(chunks: list[dict]) -> str:
+    return "\n\n".join(prompts.MCQ_EXCERPT_ITEM.format(
+        i=i + 1, where=f"{c.get('unit', 'page')} {c['page']}", text=c["text"]) for i, c in enumerate(chunks))
 
 
 def _build_user_prompt(chunks: list[dict], n: int, difficulty: str, topic: str | None,
                        avoid: list[MCQ]) -> str:
-    excerpts = "\n\n".join(prompts.MCQ_EXCERPT_ITEM.format(i=i + 1, page=c["page"], text=c["text"])
-                           for i, c in enumerate(chunks))
+    excerpts = _excerpts(chunks)
     avoid_block = ""
     if avoid:
         avoid_block = "Do NOT repeat these existing questions:\n" + "\n".join(f"- {q.question}" for q in avoid[-15:]) + "\n"
@@ -130,8 +141,7 @@ def verify(questions: list[MCQ], chunks: list[dict]) -> list[MCQ]:
     one correct option and it is the keyed one. Fails open (keeps all) if the review is unusable."""
     if not questions:
         return []
-    excerpts = "\n\n".join(prompts.MCQ_EXCERPT_ITEM.format(i=i + 1, page=c["page"], text=c["text"])
-                           for i, c in enumerate(chunks))
+    excerpts = _excerpts(chunks)
     listing = "\n\n".join(f"{i}. {q.question}\n" + "\n".join(f"   {L}) {o}" for L, o in zip(LETTERS, q.options))
                           for i, q in enumerate(questions, 1))
     try:
@@ -155,6 +165,7 @@ def attribute_pages(questions: list[MCQ], chunks: list[dict]) -> list[MCQ]:
     q_emb = model.encode([f"query: {q.question} {q.correct_text}" for q in questions], normalize_embeddings=True)
     best = np.argmax(q_emb @ c_emb.T, axis=1)
     return [q.model_copy(update={"source_page": chunks[int(b)]["page"],
+                                 "source_unit": chunks[int(b)].get("unit", "page"),
                                  "source_doc": chunks[int(b)].get("doc_id", ""),
                                  "source_file": chunks[int(b)].get("filename", "")})
             for q, b in zip(questions, best)]
@@ -180,13 +191,14 @@ def _ask(chunks: list[dict], n: int, difficulty: str, topic: str | None, avoid: 
 
 def generate_quiz(doc_ids: list[str], n: int = 10, difficulty: str = "medium", topic: str | None = None,
                   page_range: tuple[int, int] | None = None, progress: ProgressCb | None = None,
-                  seed: int | None = None, verify_answers: bool = True) -> list[MCQ]:
+                  seed: int | None = None, verify_answers: bool = True, phase: float = 0.0) -> list[MCQ]:
     if difficulty not in prompts.DIFFICULTY_GUIDE:
         raise ValueError(f"difficulty must be one of {list(prompts.DIFFICULTY_GUIDE)}")
     progress = progress or (lambda f, m: None)
     rng = random.Random(seed)
     n_batches = math.ceil(n / BATCH_QUESTIONS)
-    pool = select_chunks(doc_ids, (n_batches + MAX_EXTRA_ROUNDS) * CHUNKS_PER_BATCH, topic, page_range)
+    pool = select_chunks(doc_ids, (n_batches + MAX_EXTRA_ROUNDS) * CHUNKS_PER_BATCH, topic, page_range,
+                         n_main=n_batches * CHUNKS_PER_BATCH, phase=phase)
     if not pool:
         return []
     # Cycle through the pool in order so successive batches cover different parts of the material.

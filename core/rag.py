@@ -10,6 +10,8 @@ from core.retriever import retrieve
 _ARABIC = re.compile(r"[؀-ۿ]")
 _LATIN = re.compile(r"[A-Za-z]")
 LANG_NAME = {"en": "English", "ar": "Arabic"}
+# A citation like [lecture.pdf p.3], [slides.pptx slide 4] or [notes.docx part 2]
+CITE_RE = re.compile(r"\[([^\[\]]+? (?:p\.|slide |part )\d+)\]")
 
 
 def detect_language(text: str) -> str:
@@ -18,7 +20,7 @@ def detect_language(text: str) -> str:
 
 
 def build_context(chunks: list[dict]) -> str:
-    return "\n\n".join(prompts.RAG_CONTEXT_ITEM.format(filename=c["filename"], page=c["page"], text=c["text"])
+    return "\n\n".join(prompts.RAG_CONTEXT_ITEM.format(filename=c["filename"], ref=c["ref"], text=c["text"])
                        for c in chunks)
 
 

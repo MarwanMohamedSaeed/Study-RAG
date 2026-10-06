@@ -19,6 +19,7 @@ class MCQ(BaseModel):
     explanation: str = Field(min_length=3)
     source_page: int = Field(ge=1)
     # Filled in by mcq.attribute_pages (never by the LLM): which document the page belongs to.
+    source_unit: str = "page"   # page | slide | part
     source_doc: str = ""
     source_file: str = ""
 
@@ -71,6 +72,11 @@ class MCQ(BaseModel):
         return self
 
     @property
+    def source_ref(self) -> str:
+        """'p.3', 'slide 3' or 'part 3'."""
+        return f"p.{self.source_page}" if self.source_unit == "page" else f"{self.source_unit} {self.source_page}"
+
+    @property
     def correct_text(self) -> str:
         return self.options[LETTERS.index(self.correct)]
 
@@ -95,6 +101,114 @@ LLM_VERIFY_SCHEMA = {
         }
     },
     "required": ["reviews"],
+}
+
+# =============================================================================
+# Study tools: glossary and concept map
+# =============================================================================
+_ARABIC = re.compile(r"[؀-ۿ]")
+
+
+class GlossaryTerm(BaseModel):
+    term: str = Field(min_length=2, max_length=60)
+    arabic: str = Field(min_length=1, max_length=80)
+    definition_en: str = Field(min_length=10)
+    definition_ar: str = Field(min_length=5)
+    page: int = Field(ge=1)
+    unit: str = "page"            # set by the code, like MCQ.source_unit
+
+    @field_validator("term", "arabic", "definition_en", "definition_ar")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        return " ".join(v.split())
+
+    @field_validator("arabic", "definition_ar")
+    @classmethod
+    def _must_be_arabic(cls, v: str) -> str:
+        if not _ARABIC.search(v):
+            raise ValueError("must be written in Arabic")
+        return v
+
+    @property
+    def ref(self) -> str:
+        return f"p.{self.page}" if self.unit == "page" else f"{self.unit} {self.page}"
+
+
+class ConceptNode(BaseModel):
+    id: str = Field(min_length=1, max_length=40)
+    label: str = Field(min_length=2, max_length=60)
+    page: int | None = None
+
+
+class ConceptEdge(BaseModel):
+    source: str
+    target: str
+    label: str = Field(default="", max_length=40)
+
+
+class ConceptMap(BaseModel):
+    nodes: list[ConceptNode] = Field(min_length=3, max_length=25)
+    edges: list[ConceptEdge] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _clean_graph(self):
+        # unique ids; keep edges that join two different, existing nodes; no duplicate edges
+        seen, nodes = set(), []
+        for n in self.nodes:
+            if n.id not in seen:
+                seen.add(n.id)
+                nodes.append(n)
+        pairs, edges = set(), []
+        for e in self.edges:
+            if e.source in seen and e.target in seen and e.source != e.target and (e.source, e.target) not in pairs:
+                pairs.add((e.source, e.target))
+                edges.append(e)
+        if len(nodes) < 3:
+            raise ValueError("a concept map needs at least 3 distinct concepts")
+        if not edges:
+            raise ValueError("a concept map needs at least one valid link between concepts")
+        self.nodes, self.edges = nodes, edges
+        return self
+
+    def isolated(self) -> list[str]:
+        linked = {e.source for e in self.edges} | {e.target for e in self.edges}
+        return [n.id for n in self.nodes if n.id not in linked]
+
+    def connected_only(self) -> "ConceptMap":
+        lonely = set(self.isolated())
+        return self.model_copy(update={"nodes": [n for n in self.nodes if n.id not in lonely]})
+
+
+LLM_GLOSSARY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "terms": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "term": {"type": "string"}, "arabic": {"type": "string"},
+                    "definition_en": {"type": "string"}, "definition_ar": {"type": "string"},
+                    "page": {"type": "integer"},
+                },
+                "required": ["term", "arabic", "definition_en", "definition_ar", "page"],
+            },
+        }
+    },
+    "required": ["terms"],
+}
+
+LLM_CONCEPT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "nodes": {"type": "array", "items": {"type": "object", "properties": {
+            "id": {"type": "string"}, "label": {"type": "string"}, "page": {"type": "integer"}},
+            "required": ["id", "label"]}},
+        "edges": {"type": "array", "items": {"type": "object", "properties": {
+            "source": {"type": "string"}, "target": {"type": "string"}, "label": {"type": "string"}},
+            "required": ["source", "target", "label"]}},
+    },
+    "required": ["nodes", "edges"],
 }
 
 # Lenient schema sent to the LLM (Ollama uses it for constrained decoding).
