@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT))
 from core import config  # noqa: E402
 
 config.LLM_PROVIDER = "fake"  # tests never call a real model
+config.RETRIEVAL_MODE = "hybrid"  # no 450 MB re-ranker download in tests / CI (it has its own tests with a stub)
 
 SAMPLE = ROOT / "samples" / "networks_lecture.pdf"
 

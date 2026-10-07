@@ -11,6 +11,7 @@ jobs:
     timeout-minutes: 20
     env:
       LLM_PROVIDER: fake          # tests never call a real model
+      RETRIEVAL_MODE: hybrid      # skip the re-ranker download in CI
       MODEL_CACHE: ${{ github.workspace }}/models
     steps:
       - uses: actions/checkout@v4
@@ -35,4 +36,6 @@ jobs:
         run: pytest -q
 
       - name: Retrieval evaluation
-        run: python eval/run_eval.py
+        run: |
+          python eval/run_eval.py
+          python eval/benchmark.py --modes vector keyword hybrid

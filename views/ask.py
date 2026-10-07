@@ -1,7 +1,7 @@
 """Ask the material: grounded Q&A with page citations."""
 import streamlit as st
 
-from core import llm, rag
+from core import citations, llm, rag
 from core.llm import LLMError
 from views.ui import markdown as _markdown
 
@@ -13,6 +13,10 @@ def _cite_line(answer: str, sources: list[dict]) -> str:
     cited = rag.CITE_RE.findall(answer)
     refs = list(dict.fromkeys(cited)) or list(dict.fromkeys(f"{s['filename']} {s['ref']}" for s in sources))
     return "📎 " + " · ".join(refs)
+
+
+def _fix_line(fixes: list[tuple[str, str]]) -> str:
+    return "🔧 Citation check fixed " + " · ".join(f"{old} → {new}" for old, new in fixes)
 
 
 def _render_sources(sources: list[dict]):
@@ -36,6 +40,8 @@ for m in ss.messages:
         _markdown(m["content"])
         if m.get("sources"):
             st.caption(_cite_line(m["content"], m["sources"]))
+            if m.get("fixes"):
+                st.caption(_fix_line(m["fixes"]))
             _render_sources(m["sources"])
 
 question = st.chat_input("Ask a question about your lectures (English or Arabic)…", disabled=not selected)
@@ -59,9 +65,17 @@ if question:
             st.error(str(e))
             answer = None
         sources = [] if (answer is None or rag.is_not_found(answer)) else req.sources
+        fixes = []
         if sources:
+            # Safety net: a citation pointing at an unrelated source is replaced by the one that supports it.
+            checked = citations.check(answer, sources)
+            if checked.corrected:
+                answer, fixes = checked.text, checked.corrected
+                _markdown(answer, slot)
             st.caption(_cite_line(answer, sources))
+            if fixes:
+                st.caption(_fix_line(fixes))
             _render_sources(sources)
     ss.messages.append({"role": "user", "content": question})
     if answer:
-        ss.messages.append({"role": "assistant", "content": answer, "sources": sources})
+        ss.messages.append({"role": "assistant", "content": answer, "sources": sources, "fixes": fixes})

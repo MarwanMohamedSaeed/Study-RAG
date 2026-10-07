@@ -129,6 +129,9 @@ All settings live in `.env` (see [`.env.example`](.env.example)).
 | 🧬 `EMBED_MODEL` | `intfloat/multilingual-e5-small` | Multilingual embedding model |
 | ✂️ `CHUNK_SIZE` / `CHUNK_OVERLAP` | `800` / `150` | Chunking, in characters |
 | 🔎 `TOP_K` | `5` | Chunks retrieved per question |
+| 🔀 `RETRIEVAL_MODE` | `hybrid+rerank` | `vector` · `keyword` · `hybrid` · `hybrid+rerank` (chosen by the benchmark below) |
+| 🎯 `RERANK_MODEL` | `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` | Multilingual re-ranker (450 MB, downloaded on first use) |
+| 🔢 `RERANK_CANDIDATES` | `10` | Candidates per method before re-ranking |
 | 💾 `CHROMA_DIR` | `./data/chroma` | Vector store location |
 | 📈 `DB_PATH` | `./data/studyrag.db` | Quiz history / progress database (SQLite) |
 | 📦 `MODEL_CACHE` | `./models` | Where downloaded models are stored |
@@ -143,7 +146,7 @@ PyMuPDF extracts text **page by page**. The text is then Unicode-normalized (NFK
 
 ### 2️⃣ 💬 Ask the material (RAG)
 
-The question is embedded and the **top-5** chunks are retrieved across the selected documents. The prompt tells the LLM to answer **only** from those chunks, cite them as `[file p.N]`, and reply with a fixed "not in the material" sentence otherwise. Short follow-up questions reuse the previous question for retrieval.
+**Hybrid search** finds candidates two ways, by meaning (e5 embeddings) and by keywords (BM25), and merges them with Reciprocal Rank Fusion. A multilingual **cross-encoder re-ranker** then reads the question together with each candidate and keeps the best 5. The prompt tells the LLM to answer **only** from those chunks, cite them as `[file p.N]`, and reply with a fixed "not in the material" sentence otherwise. A **citation check** afterwards replaces any citation that points at an unrelated source. Short follow-up questions reuse the previous question for retrieval.
 
 ### 3️⃣ 📝 Question generation: a 7-step quality pipeline
 
@@ -183,7 +186,7 @@ flowchart LR
     end
 
     subgraph QA["💬 Ask tab · core/rag.py"]
-        Q["❓ Question"] --> R["🔎 Top-5 retrieval<br/>across selected docs"]
+        Q["❓ Question"] --> R["🔎 Hybrid search (vectors + BM25)<br/>+ cross-encoder re-rank → top 5"]
         E --> R
         R --> P["📜 Grounded prompt<br/>cite or refuse · same language"]
         P --> ANS["✅ Answer + citations<br/>+ Sources panel"]
@@ -215,6 +218,8 @@ flowchart LR
 | 📄 PDF parsing | PyMuPDF |
 | 🧬 Embeddings | sentence-transformers · `intfloat/multilingual-e5-small` |
 | 💾 Vector store | ChromaDB (persistent) |
+| 🔀 Keyword search | BM25 (`rank_bm25`) + Reciprocal Rank Fusion |
+| 🎯 Re-ranking | sentence-transformers cross-encoder · `mmarco-mMiniLMv2` (multilingual) |
 | 📈 Progress store | SQLite |
 | 🤖 LLM | Ollama (Qwen3-4B) · Anthropic Claude |
 | 🛡️ Validation | Pydantic v2 |
@@ -249,12 +254,17 @@ studyrag/
 │   ├── grading.py            # grading every question type (LLM for short answers)
 │   ├── cards.py              # flashcards from glossary / lecture / mistakes
 │   ├── srs.py                # SM-2 spaced repetition
+│   ├── citations.py          # citation check (re-ranker judges support)
 │   ├── store.py              # SQLite: progress, mistakes, flashcards, study-material cache (with migrations)
 │   └── export.py             # JSON / Markdown / PDF export
 ├── 🧪 tests/                 # pytest suite (no LLM needed)
 ├── 📊 eval/
-│   ├── qa_pairs.json         # 10 hand-written Q&A pairs with gold pages
-│   └── run_eval.py           # retrieval hit rate@k + MRR
+│   ├── benchmark.json        # 50 hand-written questions in 4 categories, with gold pages
+│   ├── benchmark.py          # compares search modes (hit@k, MRR, latency)
+│   ├── citations.py          # citation accuracy of real answers + injection test
+│   ├── results.md            # latest measured results
+│   ├── qa_pairs.json         # 10 quick regression questions
+│   └── run_eval.py           # quick regression check
 ├── 📄 samples/               # bilingual sample lecture + generator
 ├── 🐳 Dockerfile
 ├── ⚙️ .github/workflows/     # CI: tests on every push
@@ -269,22 +279,39 @@ studyrag/
 ## 🧪 Tests & evaluation
 
 ```bash
-pytest -q                            # ✅ 104 tests: chunking, PPTX/DOCX, every question type, grading, SM-2, flashcards, store
-python eval/run_eval.py              # 📊 retrieval hit rate@5 and MRR on 10 Q&A pairs
-python eval/run_eval.py --answers    # 💬 also print LLM answers next to the gold answers
+pytest -q                                # ✅ 120 tests, no LLM or GPU needed (~45 s)
+python eval/benchmark.py --modes vector keyword hybrid hybrid+rerank   # 📊 compare search modes
+python eval/citations.py                 # 🔎 citation accuracy of real answers (uses the LLM, answers are cached)
+python eval/run_eval.py                  # ⚡ quick 10-question regression check
 ```
 
-> ⚡ The tests use a deterministic `fake` LLM, so they run in about **20 seconds** with no model or GPU.
+> ⚡ The tests use a deterministic `fake` LLM and a stub re-ranker, so they need no model download.
 
 ### 📊 Results
 
-| Metric (sample lecture) | Result |
-|---|:-:|
-| 🎯 Retrieval hit rate@5 | **10 / 10** |
-| 🥇 MRR@5 | **1.00** |
-| ✅ Unit tests | **104 / 104 passing** |
+**Retrieval benchmark**: 50 hand-written questions over 3 documents (31 chunks) built to be hard: a second lecture
+that overlaps the first (four different header sizes, two checksums, ports everywhere), paraphrases that share no
+words with the slides, and Arabic questions about English slides. Full table in [`eval/results.md`](eval/results.md).
 
-> ⚠️ The sample is a small, clean, 14-chunk lecture, so treat these numbers as a regression check, not a benchmark. Add your own course questions to `eval/qa_pairs.json` to measure real-world performance.
+| Search mode | hit@1 | hit@5 | MRR@5 | Paraphrase | Arabic → English | Time / question |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| Vector only (e5) | 78% | 94% | 0.848 | 57% | 60% | 0.04 s |
+| Keyword only (BM25) | 76% | 94% | 0.832 | 64% | 60% | 0.04 s |
+| Hybrid (RRF) | 82% | 94% | 0.873 | 64% | 60% | 0.05 s |
+| **Hybrid + re-rank** ✅ | **90%** | **98%** | **0.930** | **71%** | **90%** | 0.7 s |
+
+> 💡 Arabic questions were stuck at 60% because multilingual embeddings pull an Arabic question toward Arabic text
+> (the summary pages) instead of the English page that answers it. The cross-encoder judges relevance, not language.
+
+**Citation check**: on 48 answered benchmark questions, the model's own citations were already 100% correct with
+hybrid + re-rank retrieval. A first checker based on embeddings made them *worse* (94%), so it was replaced: the
+current one uses the re-ranker as a judge, made **0 wrong corrections**, and repaired **56%** of deliberately
+injected wrong citations. It runs as a silent safety net.
+
+| | |
+|---|:-:|
+| ✅ Unit tests | **120 / 120 passing** |
+| 🎯 Quick regression check (`run_eval.py`) | 10 / 10 |
 
 ### ⏱️ Performance
 
@@ -292,7 +319,7 @@ python eval/run_eval.py --answers    # 💬 also print LLM answers next to the g
 
 | Task | Time |
 |---|:-:|
-| 💬 Chat answer | ~4–8 s |
+| 💬 Chat answer | ~5–9 s (search + re-rank ≈ 0.7 s of it) |
 | 📝 Quiz question (incl. verification) | ~10–25 s |
 | 📋 Cheat sheet (10-page lecture) | ~80 s, then instant (cached) |
 | 🌍 Explain a page | ~60 s |
@@ -323,7 +350,7 @@ python eval/run_eval.py --answers    # 💬 also print LLM answers next to the g
 - [x] **Phase 0 · Foundation**: ⚙️ CI · 📈 progress database + quiz history · 🧭 page menu · 📦 local model cache
 - [x] **Phase 1 · Study tools**: 📋 cheat sheets · 🌍 Arabic explanations + bilingual glossary · 🧠 concept maps · ⏱️ exam simulation · 📊 PowerPoint / Word
 - [x] **Phase 2 · Learning loop**: ✍️ true/false, fill-in, short answer · 🎯 weak-spot quizzes · 🃏 flashcards with spaced repetition + Anki export
-- [ ] **Phase 3 · Quality**: 📏 larger evaluation · 🔀 hybrid search + re-ranker · ✅ citation checking
+- [x] **Phase 3 · Quality**: 📏 larger evaluation · 🔀 hybrid search + re-ranker · ✅ citation checking
 - [ ] **Phase 4 · New inputs**: 🖼️ OCR for scanned PDFs · 🎥 lecture recordings (Whisper)
 - [ ] **Phase 5 · Online**: ☁️ live demo on Hugging Face Spaces
 

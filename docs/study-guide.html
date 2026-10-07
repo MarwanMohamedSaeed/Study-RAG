@@ -178,7 +178,7 @@ html { scroll-behavior: smooth; }
 
 <nav class="rail" aria-label="Chapters">
   <details id="railbox" open>
-    <summary><span>Chapters</span><span class="progress-label" id="progLabel">0 / 15 studied</span></summary>
+    <summary><span>Chapters</span><span class="progress-label" id="progLabel">0 / 16 studied</span></summary>
     <div class="progress" aria-hidden="true"><span id="progBar"></span></div>
     <ol id="toc">
       <li><a href="#big-picture">The big picture<span class="tick">✓</span></a></li>
@@ -193,6 +193,7 @@ html { scroll-behavior: smooth; }
       <li><a href="#export">Export<span class="tick">✓</span></a></li>
       <li><a href="#studytools">Study tools &amp; exams<span class="tick">✓</span></a></li>
       <li><a href="#learning">The learning loop<span class="tick">✓</span></a></li>
+      <li><a href="#quality">Measuring quality<span class="tick">✓</span></a></li>
       <li><a href="#testing">Tests &amp; evaluation<span class="tick">✓</span></a></li>
       <li><a href="#lessons">Bugs we fixed<span class="tick">✓</span></a></li>
       <li><a href="#selftest">Self-test &amp; glossary<span class="tick">✓</span></a></li>
@@ -209,8 +210,8 @@ html { scroll-behavior: smooth; }
   <div class="hero-facts">
     <div class="fact"><b>2</b><span>features sharing one pipeline</span></div>
     <div class="fact"><b>9</b><span>modules in <code>core/</code></span></div>
-    <div class="fact"><b>104</b><span>automated tests</span></div>
-    <div class="fact"><b>10/10</b><span>retrieval hits on the sample eval</span></div>
+    <div class="fact"><b>120</b><span>automated tests</span></div>
+    <div class="fact"><b>90%</b><span>hit@1 on the 50-question benchmark</span></div>
   </div>
 </header>
 
@@ -360,6 +361,7 @@ flowchart TD
       <tr><td><code>core/grading.py</code></td><td>Grading for every question type; the LLM grades short answers against the lecture.</td></tr>
       <tr><td><code>core/srs.py</code></td><td>SM-2 spaced repetition (a pure function).</td></tr>
       <tr><td><code>core/cards.py</code></td><td>Flashcards from the glossary, the lecture, or your mistakes.</td></tr>
+      <tr><td><code>core/citations.py</code></td><td>Citation check: the re-ranker judges whether the cited source supports each sentence.</td></tr>
       <tr><td><code>core/store.py</code></td><td>SQLite progress database: saves every submitted quiz and computes accuracy per page.</td></tr>
       <tr><td><code>core/export.py</code></td><td>Quiz to JSON, Markdown and PDF.</td></tr>
       <tr><td><code>tests/</code>, <code>eval/</code></td><td>Unit tests (no LLM needed) and the retrieval evaluation script.</td></tr>
@@ -696,7 +698,7 @@ keep q  only if  reviews[i] == {q.correct}      <span class="c"># exactly one co
   <p>Uses the official <code>anthropic</code> SDK. Claude has no <code>format</code> option here, so the JSON schema is appended to the prompt as text ("Return ONLY a JSON object matching this schema"). Our tolerant <code>_extract_json</code> also strips <code>```json</code> code fences if they appear.</p>
 
   <h3>The fake provider</h3>
-  <p><code>LLM_PROVIDER=fake</code> returns predictable answers built from the prompt itself: questions made from sentences in the excerpts, and a reviewer that "knows" which option was quoted. It means all 104 tests run in about 20 seconds with no GPU and no model. That's a common professional technique: <span class="hl">make the slow, unpredictable dependency swappable</span>.</p>
+  <p><code>LLM_PROVIDER=fake</code> returns predictable answers built from the prompt itself: questions made from sentences in the excerpts, and a reviewer that "knows" which option was quoted. It means all 120 tests run in about 20 seconds with no GPU and no model. That's a common professional technique: <span class="hl">make the slow, unpredictable dependency swappable</span>.</p>
 
   <h3>Thinking models</h3>
   <p>Some models write their reasoning before the answer, between <code>&lt;think&gt;</code> tags. <code>strip_think()</code> removes it from full answers, and <code>_skip_think()</code> swallows it from the stream. <code>OLLAMA_THINK=false</code> asks Ollama to turn thinking off for models that support switching it.</p>
@@ -862,12 +864,57 @@ Good, Good, Good  →  1 day, 6 days, 15 days (6 × 2.5)</code></pre>
 
 <hr>
 
+
+<!-- ============================================================ 12b -->
+<section class="chapter" id="quality" data-ch="quality">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 13 · retriever.py + citations.py + eval/</div><h2>Measuring and improving quality (Phase 3)</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="quality"> Mark as studied</label></div>
+
+  <h3>Step 1: a benchmark that can actually fail</h3>
+  <p>The original 10-question evaluation scored 10/10, so it could not show any improvement. A useful benchmark must be hard. The new one adds a second lecture (the network layer) that <span class="hl">deliberately overlaps</span> the first: four header sizes (TCP 20, UDP 8, IPv4 20, IPv6 40 bytes), two checksums, port numbers everywhere, Dijkstra and Bellman-Ford in both a PDF and a slide deck. 50 hand-written questions are split into four categories:</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Category</th><th>Example</th><th>What it tests</th></tr></thead>
+    <tbody>
+      <tr><td>keyword</td><td>"Which port does a DHCP server listen on?"</td><td>exact terms and numbers</td></tr>
+      <tr><td>paraphrase</td><td>"What stops a packet from circling forever between routers?" (answer: TTL)</td><td>meaning without shared words</td></tr>
+      <tr><td>confusable</td><td>"How long is an IPv4 header without options?"</td><td>telling similar facts apart</td></tr>
+      <tr><td>arabic</td><td>"ما هو حجم رأس IPv6؟"</td><td>Arabic question, English slide</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Step 2: four search modes, measured</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Mode</th><th>hit@1</th><th>MRR@5</th><th>paraphrase</th><th>Arabic</th><th>time</th></tr></thead>
+    <tbody>
+      <tr><td>vector (e5)</td><td>78%</td><td>0.848</td><td>57%</td><td>60%</td><td>0.04 s</td></tr>
+      <tr><td>keyword (BM25)</td><td>76%</td><td>0.832</td><td>64%</td><td>60%</td><td>0.04 s</td></tr>
+      <tr><td>hybrid (RRF)</td><td>82%</td><td>0.873</td><td>64%</td><td>60%</td><td>0.05 s</td></tr>
+      <tr><td><b>hybrid + re-rank</b></td><td><b>90%</b></td><td><b>0.930</b></td><td><b>71%</b></td><td><b>90%</b></td><td>0.7 s</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><b>BM25</b> scores chunks by shared words, weighting rare words more (TF-IDF style). It is great for identifiers like <code>SOCK_DGRAM</code> or "port 67", and blind to meaning.</li>
+    <li><b>Reciprocal Rank Fusion</b> merges the two lists using only ranks: score = Σ 1/(60 + rank). It needs no score calibration, because BM25 scores and cosine similarities are on different scales.</li>
+    <li><b>A cross-encoder re-ranker</b> reads question and chunk <i>together</i> (one transformer pass per pair), so it judges relevance much better than comparing two separate embeddings. It is too slow for every chunk, so it only re-scores the ~10 fused candidates.</li>
+  </ul>
+  <div class="warn"><b>Finding: language bias.</b> Arabic questions were stuck at 60% in every mode without re-ranking. Multilingual embeddings pull an Arabic question toward Arabic text, so the Arabic <i>summary</i> pages won over the English page with the answer. The cross-encoder judges relevance, not language similarity: 60% → 90%.</div>
+  <p>Ten re-rank candidates gave exactly the same accuracy as twenty at half the time, so the default is 10. If the re-ranker can't load (for example, a first run without internet), search falls back to hybrid and the sidebar says so.</p>
+
+  <h3>Step 3: citation checking, and a failed first attempt</h3>
+  <p>Real answers to all 50 questions were generated and their citations compared with the gold pages. Result: <b>with hybrid + re-rank retrieval, the model's own citations were already 100% correct</b>. The wrong page numbers seen earlier came from weaker retrieval.</p>
+  <div class="warn"><b>The first checker made things worse.</b> It "corrected" citations using embedding similarity and dropped accuracy from 100% to 94%: it moved a correct TTL citation to the wrong page and pushed Arabic sentences onto the Arabic summary page (the same language bias again). It was replaced, not shipped.</div>
+  <p>The current checker uses the re-ranker as the judge and is conservative: it replaces a citation only when the cited source clearly does not support the sentence and another source clearly does. To test it on errors, each correct citation was swapped for another retrieved page (an <span class="hl">injection test</span>). Result: <b>0 wrong corrections</b> on clean answers and <b>56%</b> of injected errors repaired. It also produced "unsupported sentence" flags, but 3 of 4 were true statements, so the UI doesn't show them: a warning that's usually wrong teaches people to ignore warnings.</p>
+  <div class="why"><b>The lesson for interviews.</b> Measure before and after every "improvement". Two of the ideas here (an embedding-based citation fixer, and showing support warnings) looked good on paper and turned out harmful or noisy once measured.</div>
+</section>
+
+<hr>
+
 <!-- ============================================================ 11 -->
 <section class="chapter" id="testing" data-ch="testing">
-  <div class="ch-head"><div><div class="eyebrow">Chapter 13 · tests/ + eval/</div><h2>Tests &amp; evaluation</h2></div>
+  <div class="ch-head"><div><div class="eyebrow">Chapter 14 · tests/ + eval/</div><h2>Tests &amp; evaluation</h2></div>
   <label class="studied"><input type="checkbox" data-mark="testing"> Mark as studied</label></div>
 
-  <h3>Unit tests (104, no LLM needed)</h3>
+  <h3>Unit tests (120, no LLM needed)</h3>
   <div class="tbl"><table>
     <thead><tr><th>File</th><th>Checks</th></tr></thead>
     <tbody>
@@ -879,6 +926,8 @@ Good, Good, Good  →  1 day, 6 days, 15 days (6 × 2.5)</code></pre>
       <tr><td><code>test_formats.py</code></td><td>slides with tables and speaker notes, Word parts split at headings, slide/part citations end to end</td></tr>
       <tr><td><code>test_study.py</code></td><td>glossary and concept-map rules, cheat-sheet cache and two-step path, page rebuilding, exam counts and report</td></tr>
       <tr><td><code>test_learning.py</code></td><td>every question type, fill-in matching, grading, generation per type, grounding check, mixed quizzes, mistakes list, SM-2 intervals, flashcards, Anki export</td></tr>
+      <tr><td><code>test_search.py</code></td><td>tokenizer, BM25 on identifiers, page filters, RRF, every mode, re-ranking with a stub, fallback when the model is missing</td></tr>
+      <tr><td><code>test_citations.py</code></td><td>correct citations untouched, unrelated or invented labels replaced, refusals skipped, embedding fallback</td></tr>
       <tr><td><code>test_store.py</code></td><td>migrations run once, attempts saved and read back, totals, weakest pages first, per-document filter</td></tr>
     </tbody>
   </table></div>
@@ -900,7 +949,7 @@ MRR      = (1 + 1 + 0.5 + 0) / 4 = 0.625</code></pre>
 
 <!-- ============================================================ 12 -->
 <section class="chapter" id="lessons" data-ch="lessons">
-  <div class="ch-head"><div><div class="eyebrow">Chapter 14</div><h2>Bugs we hit and how we fixed them</h2></div>
+  <div class="ch-head"><div><div class="eyebrow">Chapter 15</div><h2>Bugs we hit and how we fixed them</h2></div>
   <label class="studied"><input type="checkbox" data-mark="lessons"> Mark as studied</label></div>
 
   <p>These are real problems from building this project. They make the best interview stories, because each one shows how you think, not just what you built.</p>
@@ -958,7 +1007,7 @@ MRR      = (1 + 1 + 0.5 + 0) / 4 = 0.625</code></pre>
 
 <!-- ============================================================ 13 -->
 <section class="chapter" id="selftest" data-ch="selftest">
-  <div class="ch-head"><div><div class="eyebrow">Chapter 15</div><h2>Self-test &amp; glossary</h2></div>
+  <div class="ch-head"><div><div class="eyebrow">Chapter 16</div><h2>Self-test &amp; glossary</h2></div>
   <label class="studied"><input type="checkbox" data-mark="selftest"> Mark as studied</label></div>
 
   <p>Try to answer each question out loud before opening it. These are also the questions an interviewer is likely to ask about this project.</p>
@@ -988,6 +1037,9 @@ MRR      = (1 + 1 + 0.5 + 0) / 4 = 0.625</code></pre>
   <details class="qa"><summary>How did you make a 4B model actually answer in Arabic?</summary><div class="ans"><p>The language rule moved to the start of the system prompt with a concrete example, and every Arabic request ends with a short reminder written in Arabic. Small models weigh the last instruction and the target-language text most. We measured the result: 85–90% Arabic letters.</p></div></details>
   <details class="qa"><summary>Explain SM-2. What happens after Good, Good, Good, then Again?</summary><div class="ans"><p>Each card has an ease (2.5 at first), an interval and a count of successful reviews. Good, Good, Good gives 1 day, 6 days, then 6 × 2.5 = 15 days. Again resets the count to 0, lowers the ease (never below 1.3) and, with the Anki-style rule, makes the card due again the same day.</p></div></details>
   <details class="qa"><summary>The blind check uses the same model. What can it NOT catch, and how did you handle it?</summary><div class="ans"><p>It can't catch facts the model knows from training that aren't in the lecture: the writer and the checker share the same knowledge. For fill-in questions a plain-code grounding check requires the answer to appear in the source excerpts. In general: use code for anything that can be checked exactly.</p></div></details>
+  <details class="qa"><summary>Why did hybrid search barely help Arabic questions, while re-ranking took them from 60% to 90%?</summary><div class="ans"><p>Both vector and keyword search were pulled toward the Arabic summary pages: embeddings because the language matches, BM25 because the Arabic words match. A cross-encoder reads the question and the passage together and scores relevance, so an English page that answers an Arabic question wins.</p></div></details>
+  <details class="qa"><summary>What is Reciprocal Rank Fusion and why use it instead of adding scores?</summary><div class="ans"><p>Each list contributes 1/(60 + rank) for every item; the sums decide the order. BM25 scores and cosine similarities live on different scales, so adding them needs calibration; ranks don't. Items found by both methods rise to the top.</p></div></details>
+  <details class="qa"><summary>How did you test a citation checker when the citations were already correct?</summary><div class="ans"><p>With an injection test: each correct citation was replaced by another retrieved page, and the checker had to repair it. That measures recall (56% repaired) separately from harm (0 false corrections on the clean answers).</p></div></details>
   <details class="qa"><summary>How would you scale this to 1,000 PDFs?</summary><div class="ans"><p>One collection per PDF means one query per selected document, which gets slow. I'd move to a single collection with <code>doc_id</code> in the metadata and filter with a <code>where</code> clause; consider hybrid search (BM25 + vectors) and a re-ranker for quality; embed on a GPU or in background jobs; and possibly a server-based vector DB.</p></div></details>
   <details class="qa"><summary>What would you improve next?</summary><div class="ans"><p>Built-in OCR for scanned PDFs; .pptx/.docx support; hybrid search and re-ranking; a larger evaluation set from real courses, including answer-quality scoring; flashcards and tracking weak topics over time.</p></div></details>
 

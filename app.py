@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from core import llm
+from core import config, llm, retriever
 from core.ingest import SUPPORTED_TYPES, delete_document, get_embedder, ingest_file, list_documents
 
 st.set_page_config(page_title="StudyRAG", page_icon="📚", layout="wide")
@@ -40,9 +40,12 @@ pages = st.navigation([
 with st.sidebar:
     st.title("📚 StudyRAG")
     llm_ok, llm_msg = llm.health()
-    st.caption(f"LLM: **{llm.provider_label()}** {'🟢' if llm_ok else '🔴'}")
+    st.caption(f"LLM: **{llm.provider_label()}** {'🟢' if llm_ok else '🔴'}  \nSearch: **{config.RETRIEVAL_MODE}**")
     if not llm_ok:
         st.error(llm_msg)
+    if retriever.reranker_error:
+        st.warning("The re-ranker could not be loaded, so search is using hybrid mode without it. "
+                   f"({retriever.reranker_error})")
 
     uploads = st.file_uploader("Upload lectures (PDF, PowerPoint, Word)", type=SUPPORTED_TYPES,
                                accept_multiple_files=True)

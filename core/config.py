@@ -29,6 +29,11 @@ DB_PATH = os.getenv("DB_PATH", str(ROOT / "data" / "studyrag.db"))  # quiz histo
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 800))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 150))
 TOP_K = int(os.getenv("TOP_K", 5))
+# vector | keyword | hybrid | hybrid+rerank. The default was chosen by eval/benchmark.py
+# (hit@1 78% -> 90% vs vector-only; see eval/results.md).
+RETRIEVAL_MODE = os.getenv("RETRIEVAL_MODE", "hybrid+rerank")
+RERANK_MODEL = os.getenv("RERANK_MODEL", "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1")
+RERANK_CANDIDATES = int(os.getenv("RERANK_CANDIDATES", 10))  # 10 vs 20: same accuracy, half the time
 
 # A page with fewer extractable characters than this is treated as "probably scanned".
 MIN_PAGE_CHARS = 30

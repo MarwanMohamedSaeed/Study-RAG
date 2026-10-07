@@ -117,9 +117,14 @@ ARIAL = Path("C:/Windows/Fonts/arial.ttf")
 
 
 def build(out: Path = OUT) -> Path:
+    return render(PAGES, ARABIC_TITLE, ARABIC_BODY, out)
+
+
+def render(pages: list, arabic_title: str, arabic_body: str, out: Path) -> Path:
+    """One page per (title, body) item (None = blank page), then an Arabic summary page."""
     doc = fitz.open()
     rect = fitz.Rect(56, 56, 539, 786)
-    for item in PAGES:
+    for item in pages:
         page = doc.new_page(width=595, height=842)
         if item is None:
             continue
@@ -133,7 +138,7 @@ def build(out: Path = OUT) -> Path:
     if ARIAL.exists():
         archive = fitz.Archive(str(ARIAL.parent))
         css = "@font-face {font-family: ar; src: url(arial.ttf);} * {font-family: ar; font-size: 13pt;}"
-    page.insert_htmlbox(rect, f'<div dir="rtl"><h2>{ARABIC_TITLE}</h2><p>{ARABIC_BODY}</p></div>',
+    page.insert_htmlbox(rect, f'<div dir="rtl"><h2>{arabic_title}</h2><p>{arabic_body}</p></div>',
                         css=css, archive=archive)
     doc.subset_fonts()  # embed only the glyphs used (Arial alone is ~1.7 MB)
     doc.save(out, garbage=4, deflate=True)

@@ -15,7 +15,8 @@ def test_reingest_is_cached(sample_pdf, chroma, indexed):
 
 
 def test_retrieval_returns_metadata(indexed, chroma):
-    hits = retrieve("What is the size of the UDP header?", [indexed.doc_id], k=5, client=chroma)
+    # vector mode: results are ordered by cosine score (hybrid orders by fused rank instead)
+    hits = retrieve("What is the size of the UDP header?", [indexed.doc_id], k=5, client=chroma, mode="vector")
     assert len(hits) == 5
     for h in hits:
         assert h["filename"] == "networks_lecture.pdf"
