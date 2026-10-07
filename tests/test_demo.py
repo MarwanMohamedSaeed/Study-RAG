@@ -35,6 +35,7 @@ def test_demo_banner_samples_and_no_uploads(demo):
 def test_demo_budget_is_spent_and_enforced(demo):
     demo.chat_input[0].set_value("How long is the UDP header?").run()
     assert not demo.exception and demo.session_state["demo_used"] == 1
+    assert "**2** AI actions left" in " ".join(i.value for i in demo.sidebar.info)   # updated in the same run
     demo.session_state["demo_used"] = 3
     demo.chat_input[0].set_value("And the TCP header?").run()
     assert any("used its AI budget" in w.value for w in demo.warning)

@@ -13,6 +13,7 @@ import streamlit as st
 
 from core import config, llm, retriever, store
 from core.ingest import SUPPORTED_TYPES, delete_document, get_embedder, ingest_file, list_documents
+from views.ui import demo_banner
 
 st.set_page_config(page_title="StudyRAG", page_icon="📚", layout="wide")
 
@@ -70,10 +71,8 @@ with st.sidebar:
                    f"({retriever.reranker_error})")
 
     if config.DEMO_MODE:
-        left = max(0, config.DEMO_ACTIONS - ss.demo_used)
-        repo = f" [Run it locally]({config.REPO_URL}) to use your own lectures." if config.REPO_URL else ""
-        st.info(f"**Live demo** with sample lectures, on a shared free API quota. You have **{left}** AI "
-                f"actions left in this session.{repo}")
+        ss.demo_slot = st.empty()   # filled by demo_banner(); refreshed whenever an action is spent
+        demo_banner()
         uploads = []
     else:
         uploads = st.file_uploader("Upload lectures (PDF, PowerPoint, Word)", type=SUPPORTED_TYPES,

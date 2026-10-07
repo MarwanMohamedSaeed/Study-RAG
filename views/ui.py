@@ -19,6 +19,20 @@ def markdown(text: str, target=st):
         target.markdown(text)
 
 
+def demo_banner() -> None:
+    """The sidebar's demo notice. It lives in a placeholder so demo_guard() can refresh the count
+    in the same run (the sidebar is drawn before the page spends anything)."""
+    from core import config
+    ss = st.session_state
+    slot = ss.get("demo_slot")
+    if slot is None:
+        return
+    left = max(0, config.DEMO_ACTIONS - ss.get("demo_used", 0))
+    repo = f" [Run it locally]({config.REPO_URL}) to use your own lectures." if config.REPO_URL else ""
+    slot.info(f"**Live demo** with sample lectures, on a shared free API quota. You have **{left}** AI "
+              f"actions left in this session.{repo}")
+
+
 def demo_guard(cost: int) -> None:
     """Demo mode: spend `cost` AI actions from this visitor's budget, or stop with a message.
     Outside demo mode this does nothing."""
@@ -32,6 +46,7 @@ def demo_guard(cost: int) -> None:
                    f"quota lasts for everyone.{repo}")
         st.stop()
     ss.demo_used = ss.get("demo_used", 0) + cost
+    demo_banner()
 
 
 def demo_cap(n: int) -> int:
