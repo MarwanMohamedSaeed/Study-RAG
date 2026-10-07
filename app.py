@@ -30,8 +30,9 @@ ss.setdefault("submitted", False)
 
 pages = st.navigation([
     st.Page("views/ask.py", title="Ask the material", icon="💬", default=True),
-    st.Page("views/quiz.py", title="MCQ quiz", icon="📝"),
+    st.Page("views/quiz.py", title="Quiz", icon="📝"),
     st.Page("views/study.py", title="Study tools", icon="📋"),
+    st.Page("views/flashcards.py", title="Flashcards", icon="🃏"),
     st.Page("views/exam.py", title="Exam simulation", icon="⏱️"),
     st.Page("views/progress.py", title="Progress", icon="📈"),
 ])

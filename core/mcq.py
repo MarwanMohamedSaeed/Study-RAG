@@ -1,10 +1,12 @@
-"""MCQ generation: pick chunks -> prompt LLM in batches -> validate -> dedupe -> shuffle."""
+"""Question generation for every type: pick chunks -> prompt LLM in batches -> validate ->
+attribute pages -> dedupe -> blind check. One loop; each type is described by a Spec."""
 from __future__ import annotations
 
 import json
 import math
 import random
 import re
+from dataclasses import dataclass
 from typing import Callable
 
 import numpy as np
@@ -13,7 +15,10 @@ from pydantic import ValidationError
 from core import llm, prompts
 from core.ingest import get_embedder
 from core.retriever import all_chunks, retrieve, sample_spread
-from core.schemas import LETTERS, LLM_MCQ_SCHEMA, LLM_VERIFY_SCHEMA, MCQ
+from core.grading import fill_matches, normalize
+from core.schemas import (LETTERS, LLM_FILL_SCHEMA, LLM_FILL_VERIFY_SCHEMA, LLM_MCQ_SCHEMA, LLM_SHORT_SCHEMA,
+                          LLM_TF_SCHEMA, LLM_TF_VERIFY_SCHEMA, LLM_VERIFY_SCHEMA, MCQ, QUESTION_TYPES,
+                          FillBlank, ShortAnswer, TrueFalse)
 
 BATCH_QUESTIONS = 5       # questions requested per LLM call (small models do better in small batches)
 CHUNKS_PER_BATCH = 3      # excerpts given per call (~2.4k chars of context)
@@ -41,28 +46,33 @@ def _extract_json(raw: str) -> dict:
     return data
 
 
-def parse_mcqs(raw: str, valid_pages: set[int] | None = None) -> tuple[list[MCQ], list[str]]:
+def parse_items(raw: str, model=MCQ, list_key: str = "questions",
+                valid_pages: set[int] | None = None) -> tuple[list, list[str]]:
     """Validate each item separately so one bad question doesn't sink the batch.
-    Returns (valid questions, error messages). Raises ValueError if the output is not usable JSON."""
+    Returns (valid items, error messages). Raises ValueError if the output is not usable JSON."""
     try:
         data = _extract_json(raw)
     except json.JSONDecodeError as e:
         raise ValueError(f"not valid JSON ({e.msg})") from e
-    items = data.get("questions")
+    items = data.get(list_key, data.get("questions")) if isinstance(data, dict) else None
     if not isinstance(items, list):
-        raise ValueError('JSON must have a "questions" list')
+        raise ValueError(f'JSON must have a "{list_key}" list')
     good, errors = [], []
     for i, item in enumerate(items):
         try:
-            q = MCQ.model_validate(item)
+            q = model.model_validate(item)
         except ValidationError as e:
-            errors.append(f"question {i + 1}: {e.errors()[0]['msg']}")
+            errors.append(f"item {i + 1}: {e.errors()[0]['msg']}")
             continue
         if valid_pages and q.source_page not in valid_pages:
             # models sometimes cite an excerpt number instead of a page; snap to the nearest real page
             q.source_page = min(valid_pages, key=lambda p: abs(p - q.source_page))
         good.append(q)
     return good, errors
+
+
+def parse_mcqs(raw: str, valid_pages: set[int] | None = None) -> tuple[list[MCQ], list[str]]:
+    return parse_items(raw, MCQ, "questions", valid_pages)
 
 
 def shuffle_options(q: MCQ, rng: random.Random) -> MCQ:
@@ -125,15 +135,24 @@ def _excerpts(chunks: list[dict]) -> str:
         i=i + 1, where=f"{c.get('unit', 'page')} {c['page']}", text=c["text"]) for i, c in enumerate(chunks))
 
 
-def _build_user_prompt(chunks: list[dict], n: int, difficulty: str, topic: str | None,
-                       avoid: list[MCQ]) -> str:
-    excerpts = _excerpts(chunks)
+def _build_user_prompt(spec: "Spec", chunks: list[dict], n: int, difficulty: str, topic: str | None,
+                       avoid: list) -> str:
     avoid_block = ""
     if avoid:
         avoid_block = "Do NOT repeat these existing questions:\n" + "\n".join(f"- {q.question}" for q in avoid[-15:]) + "\n"
     topic_line = f"Focus on the topic: {topic.strip()}\n" if topic and topic.strip() else ""
-    return prompts.MCQ_USER.format(n=n, difficulty_guide=prompts.DIFFICULTY_GUIDE[difficulty],
-                                   topic_line=topic_line, avoid_block=avoid_block, excerpts=excerpts)
+    return spec.user.format(n=n, difficulty_guide=prompts.DIFFICULTY_GUIDE[difficulty],
+                            topic_line=topic_line, avoid_block=avoid_block, excerpts=_excerpts(chunks))
+
+
+def _review(system: str, user: str, schema: dict, list_key: str) -> list[dict] | None:
+    """Run a blind-check prompt; None means the review itself was unusable (callers then fail open)."""
+    try:
+        data = _extract_json(llm.generate(system, user, json_schema=schema, temperature=0.0))
+        items = data.get(list_key)
+        return items if isinstance(items, list) else None
+    except (ValueError, KeyError, TypeError, AttributeError):  # JSONDecodeError is a ValueError
+        return None
 
 
 def verify(questions: list[MCQ], chunks: list[dict]) -> list[MCQ]:
@@ -141,21 +160,51 @@ def verify(questions: list[MCQ], chunks: list[dict]) -> list[MCQ]:
     one correct option and it is the keyed one. Fails open (keeps all) if the review is unusable."""
     if not questions:
         return []
-    excerpts = _excerpts(chunks)
     listing = "\n\n".join(f"{i}. {q.question}\n" + "\n".join(f"   {L}) {o}" for L, o in zip(LETTERS, q.options))
                           for i, q in enumerate(questions, 1))
-    try:
-        raw = llm.generate(prompts.MCQ_VERIFY_SYSTEM,
-                           prompts.MCQ_VERIFY_USER.format(excerpts=excerpts, questions=listing),
-                           json_schema=LLM_VERIFY_SCHEMA, temperature=0.0)
-        reviews = {int(r["number"]): {str(x).upper() for x in r.get("correct_options", [])}
-                   for r in _extract_json(raw).get("reviews", [])}
-    except (ValueError, KeyError, TypeError):  # JSONDecodeError is a ValueError
+    items = _review(prompts.MCQ_VERIFY_SYSTEM, prompts.MCQ_VERIFY_USER.format(excerpts=_excerpts(chunks), questions=listing),
+                    LLM_VERIFY_SCHEMA, "reviews")
+    if items is None:
         return questions
+    reviews = {int(r["number"]): {str(x).upper() for x in r.get("correct_options", [])} for r in items if "number" in r}
     return [q for i, q in enumerate(questions, 1) if reviews.get(i) == {q.correct}]
 
 
-def attribute_pages(questions: list[MCQ], chunks: list[dict]) -> list[MCQ]:
+def verify_tf(questions: list[TrueFalse], chunks: list[dict]) -> list[TrueFalse]:
+    """Keep a statement only if a blind judge agrees it is true/false (not 'not stated')."""
+    if not questions:
+        return []
+    listing = "\n".join(f"{i}. {q.statement}" for i, q in enumerate(questions, 1))
+    items = _review(prompts.TF_VERIFY_SYSTEM, prompts.TF_VERIFY_USER.format(excerpts=_excerpts(chunks), questions=listing),
+                    LLM_TF_VERIFY_SCHEMA, "judgements")
+    if items is None:
+        return questions
+    verdicts = {int(r["number"]): str(r.get("verdict", "")).strip().lower() for r in items if "number" in r}
+    return [q for i, q in enumerate(questions, 1) if verdicts.get(i) == ("true" if q.answer else "false")]
+
+
+def verify_fill(questions: list[FillBlank], chunks: list[dict]) -> list[FillBlank]:
+    """Keep a sentence only if a blind solver fills the blank with an accepted answer (i.e. unambiguous)."""
+    if not questions:
+        return []
+    listing = "\n".join(f"{i}. {q.sentence}" for i, q in enumerate(questions, 1))
+    items = _review(prompts.FILL_VERIFY_SYSTEM, prompts.FILL_VERIFY_USER.format(excerpts=_excerpts(chunks),
+                                                                              questions=listing),
+                    LLM_FILL_VERIFY_SCHEMA, "fills")
+    if items is None:
+        return questions
+    fills = {int(r["number"]): str(r.get("answer", "")) for r in items if "number" in r}
+    return [q for i, q in enumerate(questions, 1) if fill_matches(q, fills.get(i))]
+
+
+def grounded_fill(questions: list[FillBlank], chunks: list[dict]) -> list[FillBlank]:
+    """Code check, no LLM: the blank's answer must literally appear in the excerpts it was written from.
+    Otherwise the model used outside knowledge, and the same model's blind check can't catch that."""
+    text = f" {normalize(' '.join(c['text'] for c in chunks))} "
+    return [q for q in questions if any(f" {normalize(a)} " in text for a in [q.answer, *q.alternatives] if normalize(a))]
+
+
+def attribute_pages(questions: list, chunks: list[dict]) -> list:
     """Set source_page from the chunk most similar to question + correct answer.
     Small models often write the excerpt *number* instead of its page, so we don't trust theirs."""
     if not questions or not chunks:
@@ -171,15 +220,35 @@ def attribute_pages(questions: list[MCQ], chunks: list[dict]) -> list[MCQ]:
             for q, b in zip(questions, best)]
 
 
-def _ask(chunks: list[dict], n: int, difficulty: str, topic: str | None, avoid: list[MCQ]) -> list[MCQ]:
+@dataclass(frozen=True)
+class Spec:
+    """Everything that differs between question types; the generation loop is shared."""
+    model: type
+    list_key: str
+    system: str
+    user: str
+    schema: dict
+    verify: Callable | None = None
+
+
+SPECS = {
+    "mcq": Spec(MCQ, "questions", prompts.MCQ_SYSTEM, prompts.MCQ_USER, LLM_MCQ_SCHEMA, verify),
+    "tf": Spec(TrueFalse, "statements", prompts.TF_SYSTEM, prompts.TF_USER, LLM_TF_SCHEMA, verify_tf),
+    "fill": Spec(FillBlank, "blanks", prompts.FILL_SYSTEM, prompts.FILL_USER, LLM_FILL_SCHEMA, verify_fill),
+    # Short answers have no single key to re-solve; they are graded against the lecture instead.
+    "short": Spec(ShortAnswer, "short_answers", prompts.SHORT_SYSTEM, prompts.SHORT_USER, LLM_SHORT_SCHEMA),
+}
+
+
+def _ask(spec: Spec, chunks: list[dict], n: int, difficulty: str, topic: str | None, avoid: list) -> list:
     """One LLM call + validation, with exactly one retry on invalid output."""
-    user = _build_user_prompt(chunks, n, difficulty, topic, avoid)
+    user = _build_user_prompt(spec, chunks, n, difficulty, topic, avoid)
     pages = {c["page"] for c in chunks}
     temperature = 0.4
     for attempt in range(2):
-        raw = llm.generate(prompts.MCQ_SYSTEM, user, json_schema=LLM_MCQ_SCHEMA, temperature=temperature)
+        raw = llm.generate(spec.system, user, json_schema=spec.schema, temperature=temperature)
         try:
-            good, errors = parse_mcqs(raw, pages)
+            good, errors = parse_items(raw, spec.model, spec.list_key, pages)
         except ValueError as e:
             good, errors = [], [str(e)]
         if good or attempt == 1:
@@ -191,18 +260,30 @@ def _ask(chunks: list[dict], n: int, difficulty: str, topic: str | None, avoid: 
 
 def generate_quiz(doc_ids: list[str], n: int = 10, difficulty: str = "medium", topic: str | None = None,
                   page_range: tuple[int, int] | None = None, progress: ProgressCb | None = None,
-                  seed: int | None = None, verify_answers: bool = True, phase: float = 0.0) -> list[MCQ]:
+                  seed: int | None = None, verify_answers: bool = True, phase: float = 0.0,
+                  kind: str = "mcq", focus: set[tuple[str, int]] | None = None, avoid: list | None = None) -> list:
+    """Generate n questions of one type. `focus` limits the material to these (doc_id, page) pairs
+    (used to practise weak pages); `avoid` are questions already written (e.g. other types in a
+    mixed quiz), which the model is told not to repeat and which count for de-duplication."""
+    avoid = avoid or []
     if difficulty not in prompts.DIFFICULTY_GUIDE:
         raise ValueError(f"difficulty must be one of {list(prompts.DIFFICULTY_GUIDE)}")
+    spec = SPECS[kind]
     progress = progress or (lambda f, m: None)
     rng = random.Random(seed)
     n_batches = math.ceil(n / BATCH_QUESTIONS)
-    pool = select_chunks(doc_ids, (n_batches + MAX_EXTRA_ROUNDS) * CHUNKS_PER_BATCH, topic, page_range,
-                         n_main=n_batches * CHUNKS_PER_BATCH, phase=phase)
+    if focus:
+        pool = [c for c in all_chunks(doc_ids, page_range) if (c["doc_id"], c["page"]) in focus]
+        # start each question type (phase) at a different point, or they all see the same first excerpts
+        k = int(phase * len(pool))
+        pool = pool[k:] + pool[:k]
+    else:
+        pool = select_chunks(doc_ids, (n_batches + MAX_EXTRA_ROUNDS) * CHUNKS_PER_BATCH, topic, page_range,
+                             n_main=n_batches * CHUNKS_PER_BATCH, phase=phase)
     if not pool:
         return []
     # Cycle through the pool in order so successive batches cover different parts of the material.
-    questions: list[MCQ] = []
+    questions: list = []
     empty_rounds = 0
     for round_ in range(n_batches + MAX_EXTRA_ROUNDS):
         if len(questions) >= n or empty_rounds >= MAX_EMPTY_ROUNDS:
@@ -212,13 +293,34 @@ def generate_quiz(doc_ids: list[str], n: int = 10, difficulty: str = "medium", t
         pages = ", ".join(str(p) for p in sorted({c["page"] for c in chunks}))
         progress(len(questions) / n, f"Writing questions ({len(questions)}/{n} done, pages {pages})")
         # Always ask for a full batch: verification rejects some, extras are trimmed at the end.
-        # Shuffle before verifying so the reviewer can't exploit the model's "answer is A" bias.
-        batch = [shuffle_options(q, rng) for q in _ask(chunks, BATCH_QUESTIONS, difficulty, topic, questions)]
-        batch = dedupe(batch, questions)
-        if verify_answers and batch:
+        batch = _ask(spec, chunks, BATCH_QUESTIONS, difficulty, topic, avoid + questions)
+        if kind == "fill":
+            batch = grounded_fill(batch, chunks)
+        if kind == "mcq":
+            # Shuffle before verifying so the reviewer can't exploit the model's "answer is A" bias.
+            batch = [shuffle_options(q, rng) for q in batch]
+        batch = dedupe(batch, avoid + questions)
+        if verify_answers and batch and spec.verify:
             progress(len(questions) / n, f"Checking answers ({len(questions)}/{n} done)")
-            batch = verify(batch, chunks)
+            batch = spec.verify(batch, chunks)
         questions += batch
         empty_rounds = 0 if batch else empty_rounds + 1
     progress(1.0, f"Generated {min(n, len(questions))} questions")
     return questions[:n]
+
+
+def generate_mixed(doc_ids: list[str], n: int, difficulty: str, kinds: list[str], progress: ProgressCb | None = None,
+                   seed: int | None = None, **kwargs) -> list:
+    """A quiz mixing question types: n split evenly across `kinds`, then shuffled together."""
+    from core.exam import split_counts
+    progress = progress or (lambda f, m: None)
+    counts = split_counts(n, {k: 1 / len(kinds) for k in kinds})
+    out, done = [], 0
+    for i, (kind, k) in enumerate(counts.items()):
+        out += generate_quiz(doc_ids, k, difficulty, seed=seed, kind=kind, phase=i / len(counts),
+                             progress=lambda f, m, d=done, k=k, kind=kind: progress((d + f * k) / n,
+                                                                                    f"[{QUESTION_TYPES[kind]}] {m}"),
+                             avoid=out, **kwargs)
+        done += k
+    random.Random(seed).shuffle(out)
+    return out

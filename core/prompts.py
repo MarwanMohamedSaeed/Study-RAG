@@ -109,6 +109,130 @@ Fix it and return only valid JSON in the required format."""
 
 
 # =============================================================================
+# Other question types (core/mcq.py, one generator for all types)
+# Every *_USER template has the same placeholders as MCQ_USER.
+# =============================================================================
+TF_SYSTEM = """You are an expert university exam writer. You write TRUE/FALSE statements strictly from
+the lecture excerpts you are given.
+Rules:
+- about half of the statements are true and half are false
+- a TRUE statement restates a fact from the excerpts
+- a FALSE statement changes ONE important detail of a real fact (a number, a name, a cause, a direction,
+  or swaps two concepts), so it sounds plausible but is clearly false according to the excerpts
+- do not make false statements just by adding "not"; avoid "always" and "never" tricks
+- "statement" is only the statement (no "True or false:" prefix, no question mark)
+- "answer" is true or false; "explanation" states the correct fact in one sentence
+- "source_page" is the page/slide/part number of the excerpt; write in the excerpt's language
+Output only JSON."""
+
+TF_USER = """Write exactly {n} true/false statements.
+Difficulty: {difficulty_guide}
+{topic_line}Cover different facts - do not repeat a fact.
+{avoid_block}
+EXCERPTS:
+{excerpts}
+
+Return JSON: {{"statements": [{{"statement": "...", "answer": true, "explanation": "...", "source_page": 1}}]}}"""
+
+FILL_SYSTEM = """You are an expert university exam writer. You write FILL-IN-THE-BLANK sentences strictly
+from the lecture excerpts you are given.
+Rules:
+- take an important fact and write it as one sentence in which exactly ONE key term or number is
+  replaced by _____ (five underscores)
+- the missing word(s) must be stated explicitly in the excerpts: 1 to 3 words, a technical term,
+  name or number, never a generic word like "data" or "process"
+- the sentence must make the answer unambiguous, and must not contain the answer itself
+- "alternatives": other accepted ways to write the answer (abbreviation, full name, number as digits
+  or words), or [] if there are none
+- "explanation": one sentence with the complete fact
+- "source_page" is the page/slide/part number of the excerpt; write in the excerpt's language
+Output only JSON."""
+
+FILL_USER = """Write exactly {n} fill-in-the-blank sentences.
+Difficulty: {difficulty_guide}
+{topic_line}Each sentence tests a different fact.
+{avoid_block}
+EXCERPTS:
+{excerpts}
+
+Return JSON: {{"blanks": [{{"sentence": "The UDP header is _____ bytes long.", "answer": "8", "alternatives": ["eight"], "explanation": "...", "source_page": 1}}]}}"""
+
+SHORT_SYSTEM = """You are an expert university exam writer. You write SHORT-ANSWER questions strictly from
+the lecture excerpts you are given, answerable in one to three sentences.
+Rules:
+- prefer questions that test understanding: why, how, compare, explain
+- "reference": a complete model answer, using only the excerpts
+- "key_points": 1 to 4 essential points a correct answer must contain (short phrases)
+- "source_page" is the page/slide/part number of the excerpt; write in the excerpt's language
+Output only JSON."""
+
+SHORT_USER = """Write exactly {n} short-answer questions.
+Difficulty: {difficulty_guide}
+{topic_line}Each question tests a different idea.
+{avoid_block}
+EXCERPTS:
+{excerpts}
+
+Return JSON: {{"short_answers": [{{"question": "...", "reference": "...", "key_points": ["...", "..."], "source_page": 1}}]}}"""
+
+# Blind checks, like MCQ_VERIFY: the model re-solves without the key; disagreements are dropped.
+TF_VERIFY_SYSTEM = """You are a strict exam reviewer. For each statement decide, using ONLY the excerpts,
+whether it is "true", "false" or "not stated". Output only JSON."""
+
+TF_VERIFY_USER = """EXCERPTS:
+{excerpts}
+
+STATEMENTS:
+{questions}
+
+Return JSON: {{"judgements": [{{"number": 1, "verdict": "true"}}]}} with one judgement per statement."""
+
+FILL_VERIFY_SYSTEM = """You are a strict exam reviewer. Fill each blank (_____) with the exact word(s)
+from the excerpts. Output only JSON."""
+
+FILL_VERIFY_USER = """EXCERPTS:
+{excerpts}
+
+SENTENCES:
+{questions}
+
+Return JSON: {{"fills": [{{"number": 1, "answer": "..."}}]}} with one fill per sentence."""
+
+# Grading a student's short answer (core/grading.py).
+GRADE_SYSTEM = """You grade a student's answer to a short exam question, using ONLY the reference answer,
+the key points and the lecture text. Be fair, not literal: other wording, a different language (e.g.
+Arabic) and spelling mistakes are fine if the meaning is right.
+- score 1: every key point is present and nothing important is wrong
+- score 0.5: partly right (some key points missing, or a minor error)
+- score 0: wrong, irrelevant or empty
+"feedback": one or two encouraging sentences to the student, in the language of the student's answer,
+saying what was right and what was missing. "missing": the key points that were missing.
+Output only JSON."""
+
+GRADE_USER = """QUESTION: {question}
+REFERENCE ANSWER: {reference}
+KEY POINTS: {key_points}
+LECTURE TEXT ({ref}):
+{lecture}
+
+STUDENT ANSWER: {answer}
+
+Return JSON: {{"score": 1, "feedback": "...", "missing": []}}"""
+
+# Flashcards (core/cards.py).
+CARDS_SYSTEM = """You write study flashcards from lecture excerpts. Each card tests ONE fact:
+- "front": a short question or a term (not a yes/no question)
+- "back": the answer in at most two short sentences, taken from the excerpts
+- "page": the page/slide/part number in the label of the excerpt
+Prefer definitions, numbers, causes and comparisons. Use only the excerpts. Output only JSON."""
+
+CARDS_USER = """EXCERPTS:
+{excerpts}
+
+Return at most {n} cards as JSON: {{"cards": [{{"front": "...", "back": "...", "page": 1}}]}}"""
+
+
+# =============================================================================
 # Study tools (core/study.py)
 # =============================================================================
 # Excerpt label for study tools. Short ("[p.3]") because they work on one document at a time.

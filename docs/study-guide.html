@@ -178,7 +178,7 @@ html { scroll-behavior: smooth; }
 
 <nav class="rail" aria-label="Chapters">
   <details id="railbox" open>
-    <summary><span>Chapters</span><span class="progress-label" id="progLabel">0 / 14 studied</span></summary>
+    <summary><span>Chapters</span><span class="progress-label" id="progLabel">0 / 15 studied</span></summary>
     <div class="progress" aria-hidden="true"><span id="progBar"></span></div>
     <ol id="toc">
       <li><a href="#big-picture">The big picture<span class="tick">✓</span></a></li>
@@ -192,6 +192,7 @@ html { scroll-behavior: smooth; }
       <li><a href="#app">The Streamlit app<span class="tick">✓</span></a></li>
       <li><a href="#export">Export<span class="tick">✓</span></a></li>
       <li><a href="#studytools">Study tools &amp; exams<span class="tick">✓</span></a></li>
+      <li><a href="#learning">The learning loop<span class="tick">✓</span></a></li>
       <li><a href="#testing">Tests &amp; evaluation<span class="tick">✓</span></a></li>
       <li><a href="#lessons">Bugs we fixed<span class="tick">✓</span></a></li>
       <li><a href="#selftest">Self-test &amp; glossary<span class="tick">✓</span></a></li>
@@ -208,7 +209,7 @@ html { scroll-behavior: smooth; }
   <div class="hero-facts">
     <div class="fact"><b>2</b><span>features sharing one pipeline</span></div>
     <div class="fact"><b>9</b><span>modules in <code>core/</code></span></div>
-    <div class="fact"><b>72</b><span>automated tests</span></div>
+    <div class="fact"><b>104</b><span>automated tests</span></div>
     <div class="fact"><b>10/10</b><span>retrieval hits on the sample eval</span></div>
   </div>
 </header>
@@ -356,6 +357,9 @@ flowchart TD
       <tr><td><code>core/prompts.py</code></td><td>Every prompt in one file, with comments explaining each rule.</td></tr>
       <tr><td><code>core/study.py</code></td><td>Cheat sheet, page explanation, bilingual glossary, concept map (cached in the database).</td></tr>
       <tr><td><code>core/exam.py</code></td><td>Mixed-difficulty exams across lectures, and the exam report.</td></tr>
+      <tr><td><code>core/grading.py</code></td><td>Grading for every question type; the LLM grades short answers against the lecture.</td></tr>
+      <tr><td><code>core/srs.py</code></td><td>SM-2 spaced repetition (a pure function).</td></tr>
+      <tr><td><code>core/cards.py</code></td><td>Flashcards from the glossary, the lecture, or your mistakes.</td></tr>
       <tr><td><code>core/store.py</code></td><td>SQLite progress database: saves every submitted quiz and computes accuracy per page.</td></tr>
       <tr><td><code>core/export.py</code></td><td>Quiz to JSON, Markdown and PDF.</td></tr>
       <tr><td><code>tests/</code>, <code>eval/</code></td><td>Unit tests (no LLM needed) and the retrieval evaluation script.</td></tr>
@@ -692,7 +696,7 @@ keep q  only if  reviews[i] == {q.correct}      <span class="c"># exactly one co
   <p>Uses the official <code>anthropic</code> SDK. Claude has no <code>format</code> option here, so the JSON schema is appended to the prompt as text ("Return ONLY a JSON object matching this schema"). Our tolerant <code>_extract_json</code> also strips <code>```json</code> code fences if they appear.</p>
 
   <h3>The fake provider</h3>
-  <p><code>LLM_PROVIDER=fake</code> returns predictable answers built from the prompt itself: questions made from sentences in the excerpts, and a reviewer that "knows" which option was quoted. It means all 72 tests run in about 20 seconds with no GPU and no model. That's a common professional technique: <span class="hl">make the slow, unpredictable dependency swappable</span>.</p>
+  <p><code>LLM_PROVIDER=fake</code> returns predictable answers built from the prompt itself: questions made from sentences in the excerpts, and a reviewer that "knows" which option was quoted. It means all 104 tests run in about 20 seconds with no GPU and no model. That's a common professional technique: <span class="hl">make the slow, unpredictable dependency swappable</span>.</p>
 
   <h3>Thinking models</h3>
   <p>Some models write their reasoning before the answer, between <code>&lt;think&gt;</code> tags. <code>strip_think()</code> removes it from full answers, and <code>_skip_think()</code> swallows it from the stream. <code>OLLAMA_THINK=false</code> asks Ollama to turn thinking off for models that support switching it.</p>
@@ -813,12 +817,57 @@ keep q  only if  reviews[i] == {q.correct}      <span class="c"># exactly one co
 
 <hr>
 
+
+<!-- ============================================================ 11b -->
+<section class="chapter" id="learning" data-ch="learning">
+  <div class="ch-head"><div><div class="eyebrow">Chapter 12 · grading.py + srs.py + cards.py</div><h2>The learning loop (Phase 2)</h2></div>
+  <label class="studied"><input type="checkbox" data-mark="learning"> Mark as studied</label></div>
+
+  <h3>Four question types, one generator</h3>
+  <p>Multiple choice, true/false, fill in the blank and short answer each have a Pydantic model that inherits a shared base, <code>Sourced</code> (page, unit, document). Every type exposes the same three things: <code>.question</code>, <code>.correct_text</code> and <code>.explanation</code>. So de-duplication, page attribution, storage and progress work for every type with no special cases.</p>
+  <p>The generation loop in <code>mcq.py</code> is shared. What differs between types lives in a small <span class="hl">Spec</span>: the prompt, the JSON schema, the Pydantic model and the blind check. Adding a fifth type means adding one spec.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Type</th><th>Validation rules</th><th>Blind check</th></tr></thead>
+    <tbody>
+      <tr><td>Multiple choice</td><td>4 distinct options, 1 key, no giveaways</td><td>model lists every correct option; must equal the key</td></tr>
+      <tr><td>True / false</td><td>a statement, not a question; no "True or false:" prefix</td><td>model judges true / false / not stated; must match</td></tr>
+      <tr><td>Fill in the blank</td><td>exactly one blank; answer ≤ 5 words and not visible in the sentence</td><td>model fills the blank; must match the key <b>and</b> the answer must appear in the source text</td></tr>
+      <tr><td>Short answer</td><td>a question or "Explain…"; model answer + 1–5 key points</td><td>none (no single key): graded at submit time instead</td></tr>
+    </tbody>
+  </table></div>
+  <div class="warn"><b>Bug we hit: outside knowledge.</b> A fill-in question "The UDP header is _____ bytes long" was written from excerpts (p.1, p.4, p.7) that don't say it. The model knew it from training, and the blind check, being the same model, agreed. Fix: <code>grounded_fill()</code>, a plain-code check that the answer appears in the excerpts. A model can't catch its own outside knowledge; code can.</div>
+
+  <h3>Grading (core/grading.py)</h3>
+  <ul>
+    <li><b>Fill-in</b> answers are compared after <code>normalize()</code>: case, punctuation, "the/a/an", Arabic diacritics and number words ("eight" = "8") don't matter. Answers of 5+ characters may differ by small typos (similarity ≥ 0.85, using <code>difflib</code>).</li>
+    <li><b>Short answers</b> go to the LLM with the question, the model answer, the key points <i>and the lecture page</i>. It returns a score of 0, 0.5 or 1, feedback in the student's language, and the missing points. Half credit counts as "correct" in statistics.</li>
+  </ul>
+
+  <h3>Practising weak spots</h3>
+  <ul>
+    <li><b>Retry my wrong answers</b> uses <code>store.mistakes()</code>: for each question it takes the <i>latest</i> answer (<code>MAX(id) … GROUP BY question</code>) and keeps those still wrong. Answer one correctly and it leaves the list. No LLM needed, and multiple-choice options are reshuffled so you can't remember a letter.</li>
+    <li><b>New questions on weak pages</b> passes a <code>focus</code> set of (document, page) pairs to the generator.</li>
+  </ul>
+  <div class="warn"><b>Bug we hit: four questions, one fact.</b> In a mixed quiz each type was generated separately from the same first excerpts, so 4 of 5 questions tested "how is a TCP socket identified". Two fixes: each type receives the questions already written (<code>avoid</code>), and each type starts at a different point of the material (<code>phase</code>). The next run covered 5 different facts across 4 pages.</div>
+
+  <h3>Spaced repetition: SM-2 (core/srs.py)</h3>
+  <p>Each card stores an <b>ease</b> (starts at 2.5), an <b>interval</b> in days and <b>reps</b> (successful reviews in a row). The buttons map to grades: Again 1, Hard 3, Good 4, Easy 5.</p>
+<pre><code>forgot (grade &lt; 3):  reps = 0, due again today          <span class="c"># Anki-style relearning</span>
+remembered:          interval = 1 day, then 6 days, then interval × ease
+ease += 0.1 − (5 − grade) × (0.08 + (5 − grade) × 0.02)   <span class="c"># never below 1.3</span>
+
+Good, Good, Good  →  1 day, 6 days, 15 days (6 × 2.5)</code></pre>
+  <p>Plain SM-2 shows "1 day" on all four buttons for a new card, which tells you nothing, so two Anki rules were added: <i>Again</i> keeps the card due today, and <i>Easy</i> on a new card jumps to 4 days. Cards come from the glossary (reused from the cache whatever its size; a cache-key mismatch first caused a 2.5-minute rebuild), from the lecture (LLM, validated, page-attributed), or from your mistakes. <code>anki_package()</code> builds a real <code>.apkg</code> with <code>genanki</code>; stable IDs mean re-importing updates the same deck.</p>
+</section>
+
+<hr>
+
 <!-- ============================================================ 11 -->
 <section class="chapter" id="testing" data-ch="testing">
-  <div class="ch-head"><div><div class="eyebrow">Chapter 12 · tests/ + eval/</div><h2>Tests &amp; evaluation</h2></div>
+  <div class="ch-head"><div><div class="eyebrow">Chapter 13 · tests/ + eval/</div><h2>Tests &amp; evaluation</h2></div>
   <label class="studied"><input type="checkbox" data-mark="testing"> Mark as studied</label></div>
 
-  <h3>Unit tests (72, no LLM needed)</h3>
+  <h3>Unit tests (104, no LLM needed)</h3>
   <div class="tbl"><table>
     <thead><tr><th>File</th><th>Checks</th></tr></thead>
     <tbody>
@@ -829,6 +878,7 @@ keep q  only if  reviews[i] == {q.correct}      <span class="c"># exactly one co
       <tr><td><code>test_export.py</code></td><td>JSON round-trip, Markdown key order, PDF size and content</td></tr>
       <tr><td><code>test_formats.py</code></td><td>slides with tables and speaker notes, Word parts split at headings, slide/part citations end to end</td></tr>
       <tr><td><code>test_study.py</code></td><td>glossary and concept-map rules, cheat-sheet cache and two-step path, page rebuilding, exam counts and report</td></tr>
+      <tr><td><code>test_learning.py</code></td><td>every question type, fill-in matching, grading, generation per type, grounding check, mixed quizzes, mistakes list, SM-2 intervals, flashcards, Anki export</td></tr>
       <tr><td><code>test_store.py</code></td><td>migrations run once, attempts saved and read back, totals, weakest pages first, per-document filter</td></tr>
     </tbody>
   </table></div>
@@ -850,7 +900,7 @@ MRR      = (1 + 1 + 0.5 + 0) / 4 = 0.625</code></pre>
 
 <!-- ============================================================ 12 -->
 <section class="chapter" id="lessons" data-ch="lessons">
-  <div class="ch-head"><div><div class="eyebrow">Chapter 13</div><h2>Bugs we hit and how we fixed them</h2></div>
+  <div class="ch-head"><div><div class="eyebrow">Chapter 14</div><h2>Bugs we hit and how we fixed them</h2></div>
   <label class="studied"><input type="checkbox" data-mark="lessons"> Mark as studied</label></div>
 
   <p>These are real problems from building this project. They make the best interview stories, because each one shows how you think, not just what you built.</p>
@@ -908,7 +958,7 @@ MRR      = (1 + 1 + 0.5 + 0) / 4 = 0.625</code></pre>
 
 <!-- ============================================================ 13 -->
 <section class="chapter" id="selftest" data-ch="selftest">
-  <div class="ch-head"><div><div class="eyebrow">Chapter 14</div><h2>Self-test &amp; glossary</h2></div>
+  <div class="ch-head"><div><div class="eyebrow">Chapter 15</div><h2>Self-test &amp; glossary</h2></div>
   <label class="studied"><input type="checkbox" data-mark="selftest"> Mark as studied</label></div>
 
   <p>Try to answer each question out loud before opening it. These are also the questions an interviewer is likely to ask about this project.</p>
@@ -936,6 +986,8 @@ MRR      = (1 + 1 + 0.5 + 0) / 4 = 0.625</code></pre>
   <details class="qa"><summary>Hit rate vs MRR?</summary><div class="ans"><p>Hit rate@k: did the right page appear anywhere in the top k? MRR@k: average of 1/rank of the right page, so it also rewards ranking it first. Hit rate tells you "found or not"; MRR tells you "how high".</p></div></details>
   <details class="qa"><summary>Why do Word files cite "part 2" instead of a page number?</summary><div class="ans"><p>.docx files have no fixed pages: pagination depends on fonts, margins and the printer, so any page number we computed could be wrong. Splitting at headings gives stable, findable sections. Every document has a unit (page / slide / part), and one helper formats all citations.</p></div></details>
   <details class="qa"><summary>How did you make a 4B model actually answer in Arabic?</summary><div class="ans"><p>The language rule moved to the start of the system prompt with a concrete example, and every Arabic request ends with a short reminder written in Arabic. Small models weigh the last instruction and the target-language text most. We measured the result: 85–90% Arabic letters.</p></div></details>
+  <details class="qa"><summary>Explain SM-2. What happens after Good, Good, Good, then Again?</summary><div class="ans"><p>Each card has an ease (2.5 at first), an interval and a count of successful reviews. Good, Good, Good gives 1 day, 6 days, then 6 × 2.5 = 15 days. Again resets the count to 0, lowers the ease (never below 1.3) and, with the Anki-style rule, makes the card due again the same day.</p></div></details>
+  <details class="qa"><summary>The blind check uses the same model. What can it NOT catch, and how did you handle it?</summary><div class="ans"><p>It can't catch facts the model knows from training that aren't in the lecture: the writer and the checker share the same knowledge. For fill-in questions a plain-code grounding check requires the answer to appear in the source excerpts. In general: use code for anything that can be checked exactly.</p></div></details>
   <details class="qa"><summary>How would you scale this to 1,000 PDFs?</summary><div class="ans"><p>One collection per PDF means one query per selected document, which gets slow. I'd move to a single collection with <code>doc_id</code> in the metadata and filter with a <code>where</code> clause; consider hybrid search (BM25 + vectors) and a re-ranker for quality; embed on a GPU or in background jobs; and possibly a server-based vector DB.</p></div></details>
   <details class="qa"><summary>What would you improve next?</summary><div class="ans"><p>Built-in OCR for scanned PDFs; .pptx/.docx support; hybrid search and re-ranking; a larger evaluation set from real courses, including answer-quality scoring; flashcards and tracking weak topics over time.</p></div></details>
 

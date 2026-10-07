@@ -169,6 +169,60 @@ def _claude_stream(system, user, temperature, max_tokens):
 
 
 # --------------------------------------------------------------------------- Fake (offline)
+def _fake_sentences(user: str) -> list[tuple[str, str]]:
+    """(page, sentence) pairs from the excerpts in a prompt (MCQ-style or study-style labels)."""
+    excerpts = re.findall(r"\((?:page|slide|part) (\d+)\)\n(.+?)(?=\n--- Excerpt|\n\nReturn JSON|\n\n[A-Z]+:|\Z)", user, flags=re.S)
+    excerpts += [(re.findall(r"\d+", lab)[-1], t) for lab, t in re.findall(r"^\[([^\]\n]+)\]\n(.+)$", user, flags=re.M)]
+    return [(p, " ".join(s.split())) for p, t in excerpts for s in re.split(r"(?<=[.!])\s+", t)
+            if len(s.split()) >= 6 and not s.strip().endswith("?")]
+
+
+def _fake_phase2(user: str, props: dict) -> str:
+    """Deterministic answers for the Phase 2 prompts (question types, blind checks, grading, cards)."""
+    sents = _fake_sentences(user) or [("1", "The transport layer moves data between processes on hosts.")]
+    offset = len(re.findall(r"^- ", user, flags=re.M))
+    n = int((re.search(r"exactly (\d+) |at most (\d+) ", user) or [0, 3])[1] or 3)
+    pick = [sents[(i + offset) % len(sents)] for i in range(n)]
+    flat = " ".join(" ".join(user.split("STATEMENTS:")[0].split("SENTENCES:")[0].split()).split())
+    if "statements" in props:  # true = sentence as written; false = negated wording (not in the text)
+        return json.dumps({"statements": [{"statement": s if i % 2 == 0 else f"It is untrue that {s[0].lower()}{s[1:]}",
+                                           "answer": i % 2 == 0, "explanation": s, "source_page": int(p)}
+                                          for i, (p, s) in enumerate(pick)]})
+    if "judgements" in props:
+        items = re.findall(r"^(\d+)\. (.+)$", user.split("STATEMENTS:")[-1], flags=re.M)
+        return json.dumps({"judgements": [{"number": int(k), "verdict": "true" if s in flat else "false"} for k, s in items]})
+    if "blanks" in props:
+        out = []
+        for p, s in pick:
+            words = [w.strip(".,;:()") for w in s.split()]
+            word = max((w for w in words if w.isalpha() and len(w) >= 5 and s.lower().count(w.lower()) == 1),
+                       key=len, default=None)
+            if word:
+                out.append({"sentence": s.replace(word, "_____", 1), "answer": word, "alternatives": [],
+                            "explanation": s, "source_page": int(p)})
+        return json.dumps({"blanks": out})
+    if "fills" in props:
+        fills = []
+        for k, s in re.findall(r"^(\d+)\. (.+)$", user.split("SENTENCES:")[-1], flags=re.M):
+            before, _, after = s.partition("_____")
+            m = re.search(re.escape(before.strip()) + r"\s*([\w-]+)\s*" + re.escape(after.strip()[:20]), flat)
+            fills.append({"number": int(k), "answer": m.group(1) if m else ""})
+        return json.dumps({"fills": fills})
+    if "short_answers" in props:
+        return json.dumps({"short_answers": [{"question": f"Explain: {s[:80]}", "reference": s,
+                                              "key_points": [" ".join(s.split()[:4])], "source_page": int(p)}
+                                             for p, s in pick]})
+    if "score" in props:  # grade by word overlap between the student's answer and the reference
+        ref = set(re.findall(r"\w+", re.search(r"REFERENCE ANSWER: (.*)", user).group(1).lower()))
+        ans = set(re.findall(r"\w+", re.search(r"STUDENT ANSWER: (.*)", user).group(1).lower()))
+        overlap = len(ref & ans) / max(1, len(ref))
+        score = 1 if overlap >= .5 else .5 if overlap >= .2 else 0
+        return json.dumps({"score": score, "feedback": f"(fake LLM) overlap {overlap:.0%}", "missing": []})
+    return json.dumps({"cards": [{"front": f"What does the lecture say about {' '.join(s.split()[:3])}?",
+                                  "back": s[:200], "page": int(p)} for p, s in pick]})
+
+
+
 def _fake(system, user, json_schema):
     """Deterministic stub: echoes context for Q&A, builds trivially-valid MCQs from excerpts."""
     labels = re.findall(r"\[([^\[\]\n]*?(?:p\.|slide |part )\d+)\]", user)
@@ -183,6 +237,8 @@ def _fake(system, user, json_schema):
         if "tutor" in system:
             return "1. **The main idea**: (fake LLM) explanation of the page.\n\n3. **Remember for the exam**: - one point"
         return f"(fake LLM) Based on the material [{labels[0]}]." if labels else "(fake LLM) Not found."
+    if props.keys() & {"statements", "blanks", "short_answers", "judgements", "fills", "cards", "score"}:
+        return _fake_phase2(user, props)
     if "terms" in props:
         # one term per excerpt: its first two words, with Arabic placeholders that pass validation
         terms = []

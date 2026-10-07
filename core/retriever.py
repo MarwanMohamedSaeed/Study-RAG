@@ -27,6 +27,14 @@ def _to_chunk(text: str, meta: dict, distance: float | None = None) -> dict:
     }
 
 
+def _collection(client, doc_id: str):
+    """The document's collection, or None if it was deleted (old quiz questions can point to it)."""
+    try:
+        return client.get_collection(doc_id)
+    except Exception:  # chromadb raises NotFoundError (ValueError in older versions)
+        return None
+
+
 def retrieve(query: str, doc_ids: list[str], k: int = config.TOP_K,
              page_range: tuple[int, int] | None = None, client=None) -> list[dict]:
     """Top-k chunks across all selected documents, merged by similarity."""
@@ -37,8 +45,8 @@ def retrieve(query: str, doc_ids: list[str], k: int = config.TOP_K,
     where = _page_filter(page_range)
     hits: list[dict] = []
     for doc_id in doc_ids:
-        col = client.get_collection(doc_id)
-        n = col.count()
+        col = _collection(client, doc_id)
+        n = col.count() if col else 0
         if n == 0:
             continue
         res = col.query(query_embeddings=[q_emb], n_results=min(k, n), where=where,
@@ -54,8 +62,10 @@ def all_chunks(doc_ids: list[str], page_range: tuple[int, int] | None = None, cl
     client = client or get_client()
     out: list[dict] = []
     for doc_id in doc_ids:
-        res = client.get_collection(doc_id).get(where=_page_filter(page_range),
-                                                include=["documents", "metadatas"])
+        col = _collection(client, doc_id)
+        if col is None:
+            continue
+        res = col.get(where=_page_filter(page_range), include=["documents", "metadatas"])
         out.extend(_to_chunk(t, m) for t, m in zip(res["documents"], res["metadatas"]))
     out.sort(key=lambda c: (c["doc_id"], c["page"], c["chunk_index"]))
     return out

@@ -1,6 +1,7 @@
-"""Pydantic models for MCQ output validation."""
+"""Pydantic models that validate LLM output: questions of every type, glossary, concept map, cards."""
 from __future__ import annotations
 
+import json
 import re
 from typing import Literal
 
@@ -12,16 +13,25 @@ BANNED_OPTIONS = {"all of the above", "none of the above", "both a and b", "all 
 _PREFIX = re.compile(r"^\s*(?:\(?[A-Da-d][\).:\-]|[A-Da-d]\s*-)\s+")
 
 
-class MCQ(BaseModel):
+class Sourced(BaseModel):
+    """Where a question or card comes from. Set by the code (attribute_pages), never trusted from the LLM."""
+    source_page: int = Field(ge=1)
+    source_unit: str = "page"   # page | slide | part
+    source_doc: str = ""
+    source_file: str = ""
+
+    @property
+    def source_ref(self) -> str:
+        """'p.3', 'slide 3' or 'part 3'."""
+        return f"p.{self.source_page}" if self.source_unit == "page" else f"{self.source_unit} {self.source_page}"
+
+
+class MCQ(Sourced):
+    kind: Literal["mcq"] = "mcq"
     question: str = Field(min_length=8)
     options: list[str] = Field(min_length=4, max_length=4)
     correct: Literal["A", "B", "C", "D"]
     explanation: str = Field(min_length=3)
-    source_page: int = Field(ge=1)
-    # Filled in by mcq.attribute_pages (never by the LLM): which document the page belongs to.
-    source_unit: str = "page"   # page | slide | part
-    source_doc: str = ""
-    source_file: str = ""
 
     @field_validator("question", "explanation")
     @classmethod
@@ -72,17 +82,136 @@ class MCQ(BaseModel):
         return self
 
     @property
-    def source_ref(self) -> str:
-        """'p.3', 'slide 3' or 'part 3'."""
-        return f"p.{self.source_page}" if self.source_unit == "page" else f"{self.source_unit} {self.source_page}"
-
-    @property
     def correct_text(self) -> str:
         return self.options[LETTERS.index(self.correct)]
 
 
 class MCQBatch(BaseModel):
     questions: list[MCQ]
+
+
+# =============================================================================
+# Other question types. All expose .question, .correct_text and .explanation,
+# so de-duplication, page attribution, storage and progress work for every type.
+# =============================================================================
+BLANK = "_____"
+_BLANK_RE = re.compile(r"_{3,}|\[blank\]|\(blank\)|\.{4,}", flags=re.I)
+
+
+class TrueFalse(Sourced):
+    kind: Literal["tf"] = "tf"
+    statement: str = Field(min_length=12)
+    answer: bool
+    explanation: str = Field(min_length=3)
+
+    @field_validator("statement", "explanation")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        return " ".join(v.split())
+
+    @field_validator("statement")
+    @classmethod
+    def _plain_statement(cls, v: str) -> str:
+        if v.endswith("?"):
+            raise ValueError("must be a statement, not a question")
+        if re.match(r"(?i)^(true or false|t/f)\b", v):
+            raise ValueError("write only the statement, without 'True or false'")
+        return v
+
+    @property
+    def question(self) -> str:
+        return self.statement
+
+    @property
+    def correct_text(self) -> str:
+        return "True" if self.answer else "False"
+
+
+class FillBlank(Sourced):
+    kind: Literal["fill"] = "fill"
+    sentence: str = Field(min_length=12)
+    answer: str = Field(min_length=1, max_length=60)
+    alternatives: list[str] = Field(default_factory=list, max_length=5)
+    explanation: str = Field(default="", max_length=400)
+
+    @field_validator("sentence")
+    @classmethod
+    def _one_blank(cls, v: str) -> str:
+        v = _BLANK_RE.sub(BLANK, " ".join(v.split()))
+        if v.count(BLANK) != 1:
+            raise ValueError(f"the sentence must contain exactly one blank written as {BLANK}")
+        return v
+
+    @field_validator("answer")
+    @classmethod
+    def _short_answer(cls, v: str) -> str:
+        v = v.strip().strip(".")
+        if len(v.split()) > 5:
+            raise ValueError("the blank must be filled by at most 5 words")
+        return v
+
+    @model_validator(mode="after")
+    def _answer_not_visible(self):
+        if self.answer.casefold() in self.sentence.casefold():
+            raise ValueError("the answer must not appear in the sentence")
+        return self
+
+    @property
+    def question(self) -> str:
+        return self.sentence
+
+    @property
+    def correct_text(self) -> str:
+        return self.answer
+
+
+class ShortAnswer(Sourced):
+    kind: Literal["short"] = "short"
+    question: str = Field(min_length=10)
+    reference: str = Field(min_length=10)          # model answer, from the lecture
+    key_points: list[str] = Field(min_length=1, max_length=5)
+    explanation: str = ""
+
+    @field_validator("question")
+    @classmethod
+    def _is_question(cls, v: str) -> str:
+        v = " ".join(v.split())
+        if not (v.endswith("?") or re.match(r"(?i)^(explain|describe|compare|why|how|what|define|list|give)\b", v)):
+            raise ValueError("must be a question or an instruction such as 'Explain ...'")
+        return v
+
+    @property
+    def correct_text(self) -> str:
+        return self.reference
+
+
+Question = MCQ | TrueFalse | FillBlank | ShortAnswer
+QUESTION_MODELS = {"mcq": MCQ, "tf": TrueFalse, "fill": FillBlank, "short": ShortAnswer}
+QUESTION_TYPES = {"mcq": "Multiple choice", "tf": "True / False", "fill": "Fill in the blank", "short": "Short answer"}
+
+
+def load_question(data: dict | str) -> Question:
+    """Rebuild a stored question of any type (rows saved before Phase 2 have no 'kind': they are MCQs)."""
+    if isinstance(data, str):
+        data = json.loads(data)
+    return QUESTION_MODELS[data.get("kind", "mcq")].model_validate(data)
+
+
+class Flashcard(BaseModel):
+    front: str = Field(min_length=5, max_length=300)
+    back: str = Field(min_length=2, max_length=600)
+    page: int = Field(default=1, ge=1)
+
+    @field_validator("front", "back")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        return v.strip()
+
+    @model_validator(mode="after")
+    def _not_same(self):
+        if self.front.casefold() == self.back.casefold():
+            raise ValueError("front and back must differ")
+        return self
 
 
 LLM_VERIFY_SCHEMA = {
@@ -210,6 +339,27 @@ LLM_CONCEPT_SCHEMA = {
     },
     "required": ["nodes", "edges"],
 }
+
+def _list_schema(key: str, props: dict, required: list[str]) -> dict:
+    return {"type": "object", "required": [key], "properties": {key: {
+        "type": "array", "items": {"type": "object", "properties": props, "required": required}}}}
+
+
+_STR, _INT = {"type": "string"}, {"type": "integer"}
+LLM_TF_SCHEMA = _list_schema("statements", {"statement": _STR, "answer": {"type": "boolean"}, "explanation": _STR,
+                                            "source_page": _INT}, ["statement", "answer", "explanation", "source_page"])
+LLM_FILL_SCHEMA = _list_schema("blanks", {"sentence": _STR, "answer": _STR, "alternatives": {"type": "array", "items": _STR},
+                                          "explanation": _STR, "source_page": _INT},
+                               ["sentence", "answer", "alternatives", "explanation", "source_page"])
+LLM_SHORT_SCHEMA = _list_schema("short_answers", {"question": _STR, "reference": _STR,
+                                                  "key_points": {"type": "array", "items": _STR}, "source_page": _INT},
+                                ["question", "reference", "key_points", "source_page"])
+LLM_TF_VERIFY_SCHEMA = _list_schema("judgements", {"number": _INT, "verdict": {"type": "string",
+                                    "enum": ["true", "false", "not stated"]}}, ["number", "verdict"])
+LLM_FILL_VERIFY_SCHEMA = _list_schema("fills", {"number": _INT, "answer": _STR}, ["number", "answer"])
+LLM_CARDS_SCHEMA = _list_schema("cards", {"front": _STR, "back": _STR, "page": _INT}, ["front", "back", "page"])
+LLM_GRADE_SCHEMA = {"type": "object", "required": ["score", "feedback", "missing"], "properties": {
+    "score": {"type": "number", "enum": [0, 0.5, 1]}, "feedback": _STR, "missing": {"type": "array", "items": _STR}}}
 
 # Lenient schema sent to the LLM (Ollama uses it for constrained decoding).
 # Kept free of our custom validators so the grammar stays simple.

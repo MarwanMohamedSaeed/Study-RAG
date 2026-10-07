@@ -41,9 +41,11 @@ All of it runs locally, so your course material never leaves your machine. 🔐
 | 💬 | **Ask the material** | Retrieval-augmented Q&A with inline citations like `[lecture.pdf p.7]` and an expandable **Sources** panel. When the answer isn't in your slides, it says so instead of guessing. |
 | 🌐 | **Bilingual** | Ask in Arabic or English and get the answer in the same language, even when the slides are in the other one. Arabic is displayed right-to-left. |
 | 🧠 | **Conversation memory** | Follow-up questions such as *"and what about UDP?"* understand the earlier context. |
-| 📝 | **MCQ generator** | 5–30 questions, three difficulty levels, an optional topic and an optional page range. |
-| ✅ | **Verified questions** | Questions are validated by Pydantic, de-duplicated, shuffled, and then go through a **blind-solve check** that removes wrong or ambiguous answer keys. |
-| 🎯 | **Interactive quiz** | Answer, submit, and see your score with an explanation and source page for every question. Retake anytime. |
+| 📝 | **Quiz generator** | 5–30 questions in **four types**: multiple choice, true/false, fill in the blank and short answer, or a mix. Three difficulty levels, an optional topic and page range. |
+| ✅ | **Verified questions** | Every question is validated by Pydantic, de-duplicated and checked **blind**: the model re-solves it without the key and disagreements are dropped. Fill-in answers must also appear word-for-word in the source. |
+| 🎯 | **Interactive quiz** | Answer, submit, and see your score with an explanation and source page for every question. Fill-in answers tolerate typos and number words; **short answers are graded by the LLM** against the lecture (full, half or no credit, with feedback). |
+| 🔁 | **Practise weak spots** | **Retry my wrong answers** (a question leaves the list once you get it right) or get **new questions on your weak pages** only. |
+| 🃏 | **Flashcards** | Cards from your glossary, from the lecture, or from your mistakes, reviewed with **spaced repetition** (SM-2, Anki-style buttons). Export to **Anki (.apkg)** or CSV. |
 | 📈 | **Progress tracking** | Every submitted quiz is saved locally. The Progress page shows your history, overall accuracy, accuracy per page, and the pages you should review. |
 | 📋 | **Cheat sheets** | A one-page summary of a lecture (key ideas, definitions, numbers & formulas, likely exam points), every bullet cited. Long lectures are summarised in two steps. Export to Markdown or PDF. |
 | 🌍 | **Explain a page** | Pick a page or slide and get a simple explanation **in Arabic or English** next to the original, with technical terms kept in English. |
@@ -143,7 +145,7 @@ PyMuPDF extracts text **page by page**. The text is then Unicode-normalized (NFK
 
 The question is embedded and the **top-5** chunks are retrieved across the selected documents. The prompt tells the LLM to answer **only** from those chunks, cite them as `[file p.N]`, and reply with a fixed "not in the material" sentence otherwise. Short follow-up questions reuse the previous question for retrieval.
 
-### 3️⃣ 📝 MCQ generation: a 7-step quality pipeline
+### 3️⃣ 📝 Question generation: a 7-step quality pipeline
 
 | Step | | What happens |
 |:-:|:-:|---|
@@ -152,10 +154,16 @@ The question is embedded and the **top-5** chunks are retrieved across the selec
 | 3 | 🛡️ **Validate** | Pydantic enforces 4 distinct options, exactly 1 correct letter, no "all of the above" and no giveaway answers. Invalid output gets **one retry** |
 | 4 | 🧹 **De-duplicate** | Near-identical questions are removed by embedding similarity |
 | 5 | 🔀 **Shuffle** | Options are shuffled, because small models put the answer under "A" far too often |
-| 6 | 🔍 **Blind-solve** | The model re-answers each question **without the key**; a question is kept only if exactly one option is correct and it matches the key |
+| 6 | 🔍 **Blind-solve** | The model re-answers each question **without the key**; a question is kept only if the result matches the key (exactly one correct option; the same true/false verdict; the same word in the blank) |
 | 7 | 📍 **Attribute** | The source page is matched by embedding similarity instead of trusting the page number the model wrote |
 
-> 💡 **Key insight:** JSON validation guarantees the *format* is right, not the *answer*. The blind-solve step catches wrong answer keys that schema checks can't see.
+> 💡 **Key insight:** JSON validation guarantees the *format* is right, not the *answer*. The blind-solve step catches wrong answer keys that schema checks can't see, and a code-level **grounding check** catches what the model knows from outside the lecture (a fill-in answer must appear in its source excerpt).
+
+All four question types share **one generation loop**. Each type is described by a small `Spec` (prompt, JSON schema, Pydantic model, blind check), so adding a type means adding a spec, not another pipeline.
+
+### 🔁 The learning loop
+
+Every answer is saved with its page. **Retry my wrong answers** re-asks the questions whose *latest* answer was wrong, with options reshuffled. **New questions on weak pages** generates fresh questions only from pages below 60%. Wrong answers can become **flashcards**, which are scheduled with **SM-2** (the algorithm behind Anki): intervals grow from 1 day to 6 days to *interval × ease*, and a forgotten card starts over the same day.
 
 ### 4️⃣ 🔌 One interface, any LLM
 
@@ -223,6 +231,7 @@ studyrag/
 │   ├── ask.py                # 💬 Ask the material
 │   ├── quiz.py               # 📝 MCQ quiz
 │   ├── study.py              # 📋 cheat sheet, explain, glossary, concept map
+│   ├── flashcards.py         # 🃏 spaced-repetition review + Anki export
 │   ├── exam.py               # ⏱️ exam simulation
 │   ├── progress.py           # 📈 Progress
 │   └── ui.py                 # shared helpers (right-to-left Markdown, progress bars)
@@ -237,7 +246,10 @@ studyrag/
 │   ├── prompts.py            # every prompt, with comments
 │   ├── study.py              # cheat sheet, page explanation, glossary, concept map
 │   ├── exam.py               # mixed-difficulty exams + report
-│   ├── store.py              # SQLite progress database + study-material cache (with migrations)
+│   ├── grading.py            # grading every question type (LLM for short answers)
+│   ├── cards.py              # flashcards from glossary / lecture / mistakes
+│   ├── srs.py                # SM-2 spaced repetition
+│   ├── store.py              # SQLite: progress, mistakes, flashcards, study-material cache (with migrations)
 │   └── export.py             # JSON / Markdown / PDF export
 ├── 🧪 tests/                 # pytest suite (no LLM needed)
 ├── 📊 eval/
@@ -257,7 +269,7 @@ studyrag/
 ## 🧪 Tests & evaluation
 
 ```bash
-pytest -q                            # ✅ 72 tests: chunking, PPTX/DOCX, schemas, retrieval, study tools, exam, store
+pytest -q                            # ✅ 104 tests: chunking, PPTX/DOCX, every question type, grading, SM-2, flashcards, store
 python eval/run_eval.py              # 📊 retrieval hit rate@5 and MRR on 10 Q&A pairs
 python eval/run_eval.py --answers    # 💬 also print LLM answers next to the gold answers
 ```
@@ -270,7 +282,7 @@ python eval/run_eval.py --answers    # 💬 also print LLM answers next to the g
 |---|:-:|
 | 🎯 Retrieval hit rate@5 | **10 / 10** |
 | 🥇 MRR@5 | **1.00** |
-| ✅ Unit tests | **72 / 72 passing** |
+| ✅ Unit tests | **104 / 104 passing** |
 
 > ⚠️ The sample is a small, clean, 14-chunk lecture, so treat these numbers as a regression check, not a benchmark. Add your own course questions to `eval/qa_pairs.json` to measure real-world performance.
 
@@ -287,6 +299,9 @@ python eval/run_eval.py --answers    # 💬 also print LLM answers next to the g
 | 📖 Glossary (10-page lecture) | ~2.5 min |
 | 🧠 Concept map | 1–3 min |
 | ⏱️ Preparing a 10-question exam | ~3–4 min |
+| ✍️ Grading a short answer | ~5–10 s |
+| 🔁 5 new questions on weak pages (mixed types) | ~2.5–3 min |
+| 🃏 Generating 6 flashcards | ~50 s |
 
 ---
 
@@ -307,7 +322,7 @@ python eval/run_eval.py --answers    # 💬 also print LLM answers next to the g
 
 - [x] **Phase 0 · Foundation**: ⚙️ CI · 📈 progress database + quiz history · 🧭 page menu · 📦 local model cache
 - [x] **Phase 1 · Study tools**: 📋 cheat sheets · 🌍 Arabic explanations + bilingual glossary · 🧠 concept maps · ⏱️ exam simulation · 📊 PowerPoint / Word
-- [ ] **Phase 2 · Learning loop**: ✍️ true/false, fill-in, short answer · 🎯 weak-spot quizzes · 🃏 flashcards with spaced repetition + Anki export
+- [x] **Phase 2 · Learning loop**: ✍️ true/false, fill-in, short answer · 🎯 weak-spot quizzes · 🃏 flashcards with spaced repetition + Anki export
 - [ ] **Phase 3 · Quality**: 📏 larger evaluation · 🔀 hybrid search + re-ranker · ✅ citation checking
 - [ ] **Phase 4 · New inputs**: 🖼️ OCR for scanned PDFs · 🎥 lecture recordings (Whisper)
 - [ ] **Phase 5 · Online**: ☁️ live demo on Hugging Face Spaces
@@ -317,6 +332,7 @@ python eval/run_eval.py --answers    # 💬 also print LLM answers next to the g
 - 🤏 Small local models occasionally cite a neighbouring page or write an ambiguous question. The Sources panel and the blind-solve check reduce this but don't eliminate it; Claude gives the best quality.
 - 🖼️ Scanned PDFs need OCR before upload.
 - 🌍 Arabic glossary translations come from a 4B model: most are right, but some technical terms get a loose translation (e.g. *well-known ports*). Check unfamiliar ones.
+- ✍️ A short-answer question occasionally gets a key point the lecture doesn't support; the grader reads the lecture page too, but can still mark a correct answer as incomplete. The model answer is always shown.
 - 🧠 Concept maps from a small model tend to be several small groups rather than one connected map, and an arrow is occasionally reversed.
 - ⏳ Quiz generation time grows with the number of questions.
 

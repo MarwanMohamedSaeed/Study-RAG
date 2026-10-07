@@ -56,6 +56,31 @@ MIGRATIONS = [
         created_at  TEXT NOT NULL
     );
     """,
+    # 3: question types with partial credit + flashcards for spaced repetition
+    """
+    ALTER TABLE question_results ADD COLUMN kind TEXT NOT NULL DEFAULT 'mcq';   -- mcq | tf | fill | short
+    ALTER TABLE question_results ADD COLUMN score REAL;                        -- 0, 0.5 or 1 (NULL before v3)
+    CREATE TABLE flashcards (
+        id          INTEGER PRIMARY KEY,
+        doc_id      TEXT,
+        filename    TEXT,
+        front       TEXT    NOT NULL,
+        back        TEXT    NOT NULL,
+        source_page INTEGER,
+        source_unit TEXT    NOT NULL DEFAULT 'page',
+        origin      TEXT    NOT NULL,          -- glossary | generated | mistake
+        created_at  TEXT    NOT NULL,
+        -- SM-2 state (see core/srs.py)
+        ease        REAL    NOT NULL DEFAULT 2.5,
+        interval    INTEGER NOT NULL DEFAULT 0,  -- days
+        reps        INTEGER NOT NULL DEFAULT 0,  -- successful reviews in a row
+        lapses      INTEGER NOT NULL DEFAULT 0,
+        due         TEXT    NOT NULL,            -- ISO date
+        last_review TEXT,
+        UNIQUE (doc_id, front)
+    );
+    CREATE INDEX ix_cards_due ON flashcards(due);
+    """,
 ]
 
 
@@ -81,30 +106,95 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def record_attempt(questions: list[MCQ], answers: list[str | None], doc_ids: list[str],
+def record_attempt(questions: list, answers: list[str | None], doc_ids: list[str],
                    doc_names: list[str], difficulty: str | None = None, topic: str | None = None,
                    path: str | None = None, mode: str = "quiz", duration_s: int | None = None,
-                   difficulties: list[str] | None = None) -> int:
+                   difficulties: list[str] | None = None, scores: list[float] | None = None) -> int:
     """Save one submitted quiz or exam. Returns the attempt id.
-    `difficulties` gives a per-question level when an exam mixes them."""
+    `difficulties` gives a per-question level when an exam mixes them; `scores` (0 / 0.5 / 1 per
+    question) comes from core.grading - without it, an answer scores 1 if it equals the MCQ letter."""
     if len(questions) != len(answers):
         raise ValueError("one answer (or None) per question is required")
     per_q = difficulties or [difficulty] * len(questions)
-    score = sum(a == q.correct for q, a in zip(questions, answers))
+    scores = scores if scores is not None else [float(a == getattr(q, "correct", object())) for q, a in zip(questions, answers)]
     with closing(connect(path)) as conn, conn:
         cur = conn.execute(
             "INSERT INTO quiz_attempts (created_at, doc_ids, doc_names, difficulty, topic, n_questions, score, "
             "mode, duration_s) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (_now(), json.dumps(doc_ids), json.dumps(doc_names, ensure_ascii=False), difficulty, topic or None,
-             len(questions), score, mode, duration_s))
+             len(questions), sum(scores), mode, duration_s))
         attempt_id = cur.lastrowid
         conn.executemany(
             "INSERT INTO question_results (attempt_id, doc_id, filename, source_page, source_unit, question, "
-            "correct, chosen, is_correct, difficulty, mcq_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "correct, chosen, is_correct, difficulty, mcq_json, kind, score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [(attempt_id, q.source_doc or None, q.source_file or None, q.source_page, q.source_unit, q.question,
-              q.correct, a, int(a == q.correct), d, q.model_dump_json())
-             for q, a, d in zip(questions, answers, per_q)])
+              getattr(q, "correct", q.correct_text)[:500], a, int(s >= 0.5), d, q.model_dump_json(),
+              getattr(q, "kind", "mcq"), s)
+             for q, a, d, s in zip(questions, answers, per_q, scores)])
     return attempt_id
+
+
+def mistakes(doc_ids: list[str] | None = None, limit: int = 50, path: str | None = None) -> list:
+    """Questions whose MOST RECENT answer was wrong: once you get one right, it leaves the list."""
+    from core.schemas import load_question
+    sql = ("SELECT mcq_json FROM question_results WHERE id IN "
+           "(SELECT MAX(id) FROM question_results GROUP BY question) AND is_correct = 0")
+    params: list = []
+    if doc_ids:
+        sql += f" AND doc_id IN ({','.join('?' * len(doc_ids))})"
+        params += doc_ids
+    with closing(connect(path)) as conn:
+        rows = conn.execute(sql + " ORDER BY id DESC LIMIT ?", params + [limit]).fetchall()
+    return [load_question(r["mcq_json"]) for r in rows]
+
+
+# ---------------------------------------------------------------- flashcards
+def add_cards(cards: list[dict], origin: str, path: str | None = None) -> int:
+    """Insert cards (dicts with doc_id, filename, front, back, source_page, source_unit).
+    Cards with the same front for the same document are skipped. Returns how many were added."""
+    today = datetime.now().date().isoformat()
+    with closing(connect(path)) as conn, conn:
+        before = conn.total_changes
+        conn.executemany(
+            "INSERT OR IGNORE INTO flashcards (doc_id, filename, front, back, source_page, source_unit, origin, "
+            "created_at, due) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [(c.get("doc_id"), c.get("filename"), c["front"].strip(), c["back"].strip(), c.get("source_page"),
+              c.get("source_unit", "page"), origin, _now(), today) for c in cards])
+        return conn.total_changes - before
+
+
+def list_cards(doc_ids: list[str] | None = None, due_only: bool = False, limit: int = 1000,
+               path: str | None = None) -> list[dict]:
+    sql, params = "SELECT * FROM flashcards WHERE 1=1", []
+    if doc_ids:
+        sql += f" AND doc_id IN ({','.join('?' * len(doc_ids))})"
+        params += doc_ids
+    if due_only:
+        sql += " AND due <= ?"
+        params.append(datetime.now().date().isoformat())
+    with closing(connect(path)) as conn:
+        # unseen cards first, then cards you just failed ("Again"), oldest review first
+        return [dict(r) for r in conn.execute(sql + " ORDER BY due, last_review IS NOT NULL, last_review, id LIMIT ?",
+                                              params + [limit]).fetchall()]
+
+
+def update_card(card_id: int, ease: float, interval: int, reps: int, lapses: int, due: str,
+                path: str | None = None) -> None:
+    with closing(connect(path)) as conn, conn:
+        conn.execute("UPDATE flashcards SET ease = ?, interval = ?, reps = ?, lapses = ?, due = ?, last_review = ? "
+                     "WHERE id = ?", (ease, interval, reps, lapses, due, _now(), card_id))
+
+
+def delete_cards(ids: list[int], path: str | None = None) -> None:
+    with closing(connect(path)) as conn, conn:
+        conn.executemany("DELETE FROM flashcards WHERE id = ?", [(i,) for i in ids])
+
+
+def reviewed_today(path: str | None = None) -> int:
+    today = datetime.now().astimezone().date().isoformat()
+    with closing(connect(path)) as conn:
+        return conn.execute("SELECT COUNT(*) FROM flashcards WHERE last_review IS NOT NULL AND "
+                            "date(last_review, 'localtime') = ?", (today,)).fetchone()[0]
 
 
 # ---------------------------------------------------------------- cached study material
@@ -116,6 +206,14 @@ def note_key(kind: str, doc_ids: list[str], **options) -> str:
 def get_note(key: str, path: str | None = None) -> str | None:
     with closing(connect(path)) as conn:
         row = conn.execute("SELECT content FROM study_notes WHERE key = ?", (key,)).fetchone()
+    return row["content"] if row else None
+
+
+def latest_note(kind: str, doc_id: str, path: str | None = None) -> str | None:
+    """Most recent cached result of a tool for one document, whatever options it was made with."""
+    with closing(connect(path)) as conn:
+        row = conn.execute("SELECT content FROM study_notes WHERE kind = ? AND doc_ids = ? ORDER BY created_at DESC "
+                           "LIMIT 1", (kind, json.dumps([doc_id]))).fetchone()
     return row["content"] if row else None
 
 
