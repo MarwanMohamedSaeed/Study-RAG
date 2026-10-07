@@ -59,7 +59,7 @@ if question:
         try:
             if req.sources:
                 with slot:
-                    answer = llm.strip_think(st.write_stream(llm.stream(req.system, req.user)))
+                    answer = rag.clean_citations(llm.strip_think(st.write_stream(llm.stream(req.system, req.user))))
             else:
                 answer = req.not_found_text
             _markdown(answer, slot)  # re-render the final text (RTL for Arabic)

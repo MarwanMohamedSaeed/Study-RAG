@@ -134,9 +134,10 @@ REPO_URL = "https://github.com/<you>/<repo>"
 
 4. **Deploy.** The first build installs the packages and downloads the models (a few minutes).
 
-Demo mode preloads the sample lectures and turns off uploads (on a shared server every visitor would see everyone's
-files), keeps quiz history and flashcards private to each browser session, and gives each visitor a budget of AI
-actions so the shared free quota (Groq: about 200k tokens per model per day, three models) lasts. Free apps sleep
+Demo mode preloads the sample lectures, keeps quiz history and flashcards private to each browser session, and gives
+each visitor a budget of AI actions so the shared free quota (Groq: about 200k tokens per model per day, three models)
+lasts. Visitors can also try **their own lectures**: up to 3 files of 10 MB each, visible only to the browser session
+that uploaded them (the index is keyed by file + session) and deleted automatically after 24 hours. Free apps sleep
 after a while without visitors and wake up on the next visit.
 
 > Hugging Face Spaces now requires a PRO subscription for Docker apps on CPU. If you have one,
@@ -152,7 +153,8 @@ All settings live in `.env` (see [`.env.example`](.env.example)).
 |---|---|---|
 | 🤖 `LLM_PROVIDER` | `ollama` | `ollama` (free, local) · `groq` (free API, no card) · `openai` (any OpenAI-compatible API) · `claude` (Anthropic API) · `fake` (offline stub for tests) |
 | ⚡ `GROQ_API_KEY` / `GROQ_MODELS` | | Free key from [console.groq.com/keys](https://console.groq.com/keys). Models are tried in order; when one model's free daily quota runs out, the next is used |
-| 🌐 `DEMO_MODE` | `0` | `1` for the public demo: sample lectures only, private per-visitor progress, an AI budget per visitor |
+| 🌐 `DEMO_MODE` | `0` | `1` for the public demo: sample lectures, private per-visitor progress and uploads, an AI budget per visitor |
+| 📤 `DEMO_UPLOADS` / `DEMO_UPLOAD_MB` / `DEMO_UPLOAD_HOURS` | `3` / `10` / `24` | Demo uploads per visitor (`0` turns them off), size limit, and how long they are kept |
 | 🦙 `OLLAMA_MODEL` | `qwen3:4b-instruct` | Any Ollama model (`qwen2.5:3b` is faster but writes weaker quizzes) |
 | 🔌 `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
 | 💭 `OLLAMA_THINK` | *(empty)* | Set to `false` for "thinking" models such as `qwen3:4b` or `deepseek-r1` |
@@ -175,7 +177,7 @@ All settings live in `.env` (see [`.env.example`](.env.example)).
 
 ### 1️⃣ 📥 Ingestion
 
-PyMuPDF extracts text **page by page**. The text is then Unicode-normalized (NFKC), because many Arabic PDFs extract as special glyph forms that would break search. A recursive splitter cuts ~800-character chunks with 150 characters of overlap and never crosses a page boundary, so every chunk keeps its exact page number. `multilingual-e5-small` embeds Arabic and English into the **same vector space**, and the chunks are stored in ChromaDB, one collection per PDF.
+PyMuPDF extracts text **page by page**. The text is then Unicode-normalized (NFKC), because many Arabic PDFs extract as special glyph forms that would break search, and brackets that right-to-left PDFs store mirrored (`)LIFO(`) are put back the right way round. A recursive splitter cuts ~800-character chunks with 150 characters of overlap and never crosses a page boundary, so every chunk keeps its exact page number. `multilingual-e5-small` embeds Arabic and English into the **same vector space**, and the chunks are stored in ChromaDB, one collection per PDF.
 
 ### 2️⃣ 💬 Ask the material (RAG)
 

@@ -6,14 +6,15 @@ picker) and the page menu. Each page lives in views/ and reads the shared state 
 from __future__ import annotations
 
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
 import streamlit as st
 
 from core import config, llm, retriever, store
-from core.ingest import (SUPPORTED_TYPES, delete_document, get_embedder, ingest_file, list_documents,
-                         reembed_outdated)
+from core.ingest import (SUPPORTED_TYPES, delete_document, delete_expired_uploads, get_embedder, ingest_file,
+                         list_documents, reembed_outdated, visible_documents)
 from views.ui import demo_banner
 
 st.set_page_config(page_title="StudyRAG", page_icon="📚", layout="wide")
@@ -28,7 +29,7 @@ def _warm_embedder():
 def _preload_samples():
     """Demo mode: index the bundled sample lectures once per server."""
     from samples.make_benchmark_corpus import corpus
-    if not list_documents():
+    if not any(not d["owner"] for d in list_documents()):   # visitors' uploads don't count
         for path in corpus():
             ingest_file(path.read_bytes(), path.name)
     return True
@@ -38,6 +39,12 @@ def _preload_samples():
 def _reembed_outdated():
     """Once per server start: documents indexed with another model/backend are re-embedded."""
     return reembed_outdated()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _cleanup_uploads(_hour_bucket: int) -> int:
+    """Demo: delete visitors' uploads older than DEMO_UPLOAD_HOURS (at most once an hour)."""
+    return delete_expired_uploads(config.DEMO_UPLOAD_HOURS)
 
 
 _warm_embedder()
@@ -51,6 +58,7 @@ if config.DEMO_MODE:
     demo_dir.mkdir(exist_ok=True)
     store.use_db(str(demo_dir / f"{ss.sid}.db"))
     ss.setdefault("demo_used", 0)
+    _cleanup_uploads(int(time.time() // 3600))
 ss.setdefault("messages", [])        # chat history: {role, content, sources?}
 ss.setdefault("ingested", set())     # (name, size) of uploads already processed this session
 ss.setdefault("quiz", None)          # list[MCQ]
@@ -81,7 +89,29 @@ with st.sidebar:
     if config.DEMO_MODE:
         ss.demo_slot = st.empty()   # filled by demo_banner(); refreshed whenever an action is spent
         demo_banner()
+        mine = [d for d in list_documents() if d["owner"] == ss.sid]
         uploads = []
+        if config.DEMO_UPLOADS > 0:
+            uploads = st.file_uploader(
+                f"Try your own lecture (up to {config.DEMO_UPLOADS} files, {config.DEMO_UPLOAD_MB} MB each)",
+                type=SUPPORTED_TYPES, accept_multiple_files=True,
+                help=f"Your files are visible only to you, in this browser session, and are deleted automatically "
+                     f"after {config.DEMO_UPLOAD_HOURS:g} hours. Don't upload confidential material: its text is sent "
+                     f"to a hosted AI model to answer your questions.")
+            ss.setdefault("upload_skipped", set())
+            new = [u for u in uploads or [] if (u.name, u.size) not in ss.ingested | ss.upload_skipped]
+            too_big = [u for u in new if u.size > config.DEMO_UPLOAD_MB * 1024 * 1024]
+            if too_big:
+                st.warning(f"Over {config.DEMO_UPLOAD_MB} MB, skipped in the demo: "
+                           + ", ".join(u.name for u in too_big))
+            fits = [u for u in new if u not in too_big]
+            room = max(0, config.DEMO_UPLOADS - len(mine))
+            if len(fits) > room:
+                st.warning(f"The demo allows {config.DEMO_UPLOADS} uploads per visitor"
+                           + (f"; only the first {room} were added." if room else ". Delete one under Manage first."))
+            uploads = fits[:room]
+            # skipped files are remembered so the warning isn't repeated on every rerun (retried after a delete)
+            ss.upload_skipped |= {(u.name, u.size) for u in new if u not in uploads}
     else:
         uploads = st.file_uploader("Upload lectures (PDF, PowerPoint, Word)", type=SUPPORTED_TYPES,
                                    accept_multiple_files=True)
@@ -91,7 +121,8 @@ with st.sidebar:
             continue
         bar = st.progress(0.0, text=f"Processing {up.name}")
         try:
-            res = ingest_file(up.getvalue(), up.name, progress=lambda f, m: bar.progress(min(f, 1.0), text=m))
+            res = ingest_file(up.getvalue(), up.name, progress=lambda f, m: bar.progress(min(f, 1.0), text=m),
+                              owner=ss.sid if config.DEMO_MODE else None)
         except Exception as e:  # corrupt or password-protected file: report it, keep the app running
             bar.empty()
             ss.ingested.add(key)
@@ -102,10 +133,14 @@ with st.sidebar:
         if res.warning:
             st.warning(res.warning)
         if res.n_chunks:
+            if "selected_docs" in ss and res.doc_id not in ss.selected_docs:
+                ss.selected_docs = ss.selected_docs + [res.doc_id]   # work on what you just uploaded
             note = "already indexed" if res.already_indexed else f"{res.n_chunks} chunks from {res.n_pages} {res.unit}s"
             st.success(f"{up.name}: {note}")
 
     docs = list_documents()
+    if config.DEMO_MODE:   # shared sample lectures + this visitor's own uploads only
+        docs = visible_documents(docs, ss.sid)
     st.subheader("Documents")
     if not docs:
         st.info("Upload a lecture (PDF, PowerPoint or Word) to get started.")
@@ -118,12 +153,16 @@ with st.sidebar:
         ss.selected_docs = list(labels)  # new session: start with everything selected
     st.multiselect("Work on", options=list(labels), format_func=labels.get,
                    placeholder="Choose document(s)", key="selected_docs")
-    if docs and not config.DEMO_MODE:
+    deletable = [d["doc_id"] for d in docs if not config.DEMO_MODE or d["owner"] == ss.get("sid")]
+    if deletable:
         with st.expander("Manage"):
-            to_del = st.selectbox("Delete a document", [None] + list(labels),
+            to_del = st.selectbox("Delete a document", [None] + deletable,
                                   format_func=lambda d: "-" if d is None else labels[d])
             if to_del and st.button("Delete", type="secondary"):
                 delete_document(to_del)
+                gone = next(d["filename"] for d in docs if d["doc_id"] == to_del)
+                ss.ingested = {k for k in ss.ingested if k[0] != gone}   # so the same file can be re-uploaded
+                ss.pop("upload_skipped", None)
                 st.rerun()
 
 # Shared state for the pages

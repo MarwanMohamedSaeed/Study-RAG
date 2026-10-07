@@ -12,6 +12,9 @@ DEMO_MODE = os.getenv("DEMO_MODE", "0").strip().lower() in ("1", "true", "yes")
 DEMO_ACTIONS = int(os.getenv("DEMO_ACTIONS", 25))        # LLM calls one visitor may spend
 DEMO_MAX_QUESTIONS = int(os.getenv("DEMO_MAX_QUESTIONS", 10))
 REPO_URL = os.getenv("REPO_URL", "")                      # shown in the demo banner
+DEMO_UPLOADS = int(os.getenv("DEMO_UPLOADS", 3))          # files one visitor may upload (0 = uploads off)
+DEMO_UPLOAD_MB = int(os.getenv("DEMO_UPLOAD_MB", 10))
+DEMO_UPLOAD_HOURS = float(os.getenv("DEMO_UPLOAD_HOURS", 24))   # visitors' uploads are deleted after this
 
 # Downloaded models (embeddings now; re-ranker / Whisper / OCR later) live inside the project
 # folder instead of ~/.cache, which sits on a nearly full C: drive on the dev machine.

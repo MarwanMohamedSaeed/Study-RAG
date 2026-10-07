@@ -249,7 +249,10 @@ def _compat(system, user, json_schema, temperature, max_tokens) -> str:
 def _compat_stream(system, user, temperature, max_tokens) -> Iterator[str]:
     r = _compat_post(lambda m, fallback: _compat_payload(m, system, user, temperature, max_tokens, stream_=True),
                      stream_=True)
-    for line in r.iter_lines(decode_unicode=True):
+    # Decode the raw bytes as UTF-8 ourselves: event streams usually declare no charset, and requests then
+    # falls back to Latin-1, which turns every Arabic character into two garbage ones ("Ø·Ù...").
+    for raw in r.iter_lines():
+        line = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
         if not line or not line.startswith("data:"):
             continue
         data = line[5:].strip()

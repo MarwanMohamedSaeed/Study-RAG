@@ -24,12 +24,28 @@ def demo(chroma, tmp_path, monkeypatch):
     return at
 
 
-def test_demo_banner_samples_and_no_uploads(demo):
+def test_demo_banner_samples_and_uploader(demo):
     sidebar_text = " ".join(i.value for i in demo.sidebar.info)
     assert "Live demo" in sidebar_text and "3** AI actions left" in sidebar_text
-    assert len(demo.get("file_uploader")) == 0                       # nobody can upload into a shared server
+    assert len(demo.get("file_uploader")) == 1                       # private uploads, limited
     names = {d["filename"] for d in ingest.list_documents()}
     assert {"networks_lecture.pdf", "network_layer_lecture.pdf", "routing_slides.pptx"} <= names
+    assert len(demo.sidebar.selectbox) == 0                          # samples can't be deleted
+
+
+def test_demo_uploads_are_private(demo, sample_pdf, chroma):
+    me = demo.session_state["sid"]
+    mine = ingest.ingest_file(sample_pdf, "my_notes.pdf", client=chroma, owner=me)
+    theirs = ingest.ingest_file(sample_pdf, "their_notes.pdf", client=chroma, owner="another-visitor")
+    try:
+        demo.run()
+        assert not demo.exception, demo.exception
+        labels = demo.session_state["doc_labels"]
+        assert mine.doc_id in labels and theirs.doc_id not in labels
+        assert demo.sidebar.selectbox[0].options == ["-", labels[mine.doc_id]]   # only my upload is deletable
+    finally:
+        for d in (mine, theirs):
+            ingest.delete_document(d.doc_id, client=chroma)
 
 
 def test_demo_budget_is_spent_and_enforced(demo):

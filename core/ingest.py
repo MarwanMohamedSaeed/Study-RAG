@@ -11,6 +11,7 @@ import hashlib
 import io
 import re
 import threading
+import time
 import unicodedata
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -129,7 +130,47 @@ def extract_pages(pdf_bytes: bytes) -> list[tuple[int, str]]:
     glyphs) back to normal letters, and expands ligatures like 'ﬁ'. Without it Arabic
     text neither embeds nor matches queries properly."""
     with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-        return [(i + 1, unicodedata.normalize("NFKC", page.get_text("text"))) for i, page in enumerate(doc)]
+        return [(i + 1, fix_rtl_brackets(unicodedata.normalize("NFKC", page.get_text("text"))))
+                for i, page in enumerate(doc)]
+
+
+_MIRROR = str.maketrans("()[]{}", ")(][}{")
+_LTR_CHAR = re.compile(r"[A-Za-z0-9]")
+_ARABIC_CHAR = re.compile(r"[؀-ۿ]")
+
+
+def _bracket_errors(text: str) -> int:
+    """Unmatched brackets (closing without opening + left open)."""
+    stack, errors = [], 0
+    for ch in text:
+        if ch in "([{":
+            stack.append(ch)
+        elif ch in ")]}":
+            if stack and "([{".index(stack[-1]) == ")]}".index(ch):
+                stack.pop()
+            else:
+                errors += 1
+    return errors + len(stack)
+
+
+def fix_rtl_brackets(text: str) -> str:
+    """Un-mirror brackets that PDFs store in visual order inside right-to-left text.
+
+    In Arabic lines, a bracket at the boundary between Arabic and Latin text (not between two
+    Latin letters/digits, like the '(' in 'O(1') is often extracted mirrored: ')LIFO' ... '('.
+    The swapped version is kept only if it makes the brackets better balanced, so correctly
+    extracted text is never changed."""
+    if not _ARABIC_CHAR.search(text) or not any(c in text for c in "()[]{}"):
+        return text
+    out = list(text)
+    for i, ch in enumerate(text):
+        if ch in "()[]{}":
+            prev = text[i - 1] if i > 0 else " "
+            nxt = text[i + 1] if i + 1 < len(text) else " "
+            if not (_LTR_CHAR.match(prev) and _LTR_CHAR.match(nxt)):
+                out[i] = ch.translate(_MIRROR)
+    fixed = "".join(out)
+    return fixed if _bracket_errors(fixed) < _bracket_errors(text) else text
 
 
 def _shape_text(shape) -> list[str]:
@@ -259,16 +300,21 @@ def get_client(path: str = config.CHROMA_DIR):
         return _clients[path]
 
 
-def doc_id_for(pdf_bytes: bytes) -> str:
-    return "doc_" + hashlib.sha1(pdf_bytes).hexdigest()[:16]
+def doc_id_for(pdf_bytes: bytes, owner: str | None = None) -> str:
+    """Content hash, so re-uploading a file reuses its index. In the public demo the owner (a browser
+    session) is mixed in, so two visitors uploading the same file get separate, private copies."""
+    h = hashlib.sha1(pdf_bytes)
+    if owner:
+        h.update(owner.encode())
+    return "doc_" + h.hexdigest()[:16]
 
 
 def ingest_file(file_bytes: bytes, filename: str, progress: ProgressCb | None = None,
-                client=None) -> IngestResult:
-    """Index a PDF, PowerPoint or Word file."""
+                client=None, owner: str | None = None) -> IngestResult:
+    """Index a PDF, PowerPoint or Word file. `owner` marks a demo visitor's private upload."""
     progress = progress or (lambda f, m: None)
     client = client or get_client()
-    doc_id = doc_id_for(file_bytes)
+    doc_id = doc_id_for(file_bytes, owner)
 
     progress(0.05, f"Reading {filename}")
     unit, pages = extract_units(file_bytes, filename)
@@ -286,7 +332,8 @@ def ingest_file(file_bytes: bytes, filename: str, progress: ProgressCb | None = 
 
     col = client.get_or_create_collection(
         doc_id, metadata={"filename": filename, "n_pages": len(pages), "unit": unit, "hnsw:space": "cosine",
-                          "embedder": config.EMBEDDER_ID})
+                          "embedder": config.EMBEDDER_ID, "created": time.time(),
+                          **({"owner": owner} if owner else {})})
     for start in range(0, len(chunks), EMBED_BATCH):
         batch = chunks[start:start + EMBED_BATCH]
         progress(0.1 + 0.9 * start / len(chunks), f"Embedding chunks {start + 1}-{start + len(batch)} of {len(chunks)}")
@@ -313,8 +360,25 @@ def list_documents(client=None) -> list[dict]:
         col = client.get_collection(getattr(c, "name", c))
         meta = col.metadata or {}
         docs.append({"doc_id": col.name, "filename": meta.get("filename", col.name),
-                     "n_pages": meta.get("n_pages", 0), "unit": meta.get("unit", "page"), "n_chunks": col.count()})
+                     "n_pages": meta.get("n_pages", 0), "unit": meta.get("unit", "page"), "n_chunks": col.count(),
+                     "owner": meta.get("owner"), "created": meta.get("created")})
     return sorted(docs, key=lambda d: d["filename"].lower())
+
+
+def visible_documents(docs: list[dict], owner: str | None) -> list[dict]:
+    """Shared documents (no owner) plus this visitor's own uploads."""
+    return [d for d in docs if not d.get("owner") or d["owner"] == owner]
+
+
+def delete_expired_uploads(max_age_hours: float, client=None) -> int:
+    """Remove demo visitors' uploads older than max_age_hours. Shared documents are never touched."""
+    client = client or get_client()
+    cutoff, removed = time.time() - max_age_hours * 3600, 0
+    for d in list_documents(client):
+        if d["owner"] and (d["created"] or 0) < cutoff:
+            client.delete_collection(d["doc_id"])
+            removed += 1
+    return removed
 
 
 def reembed_outdated(client=None, progress: ProgressCb | None = None) -> list[str]:

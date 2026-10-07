@@ -16,8 +16,8 @@ class Resp:
     def json(self):
         return self._body
 
-    def iter_lines(self, decode_unicode=True):
-        yield from self._lines
+    def iter_lines(self, decode_unicode=False):
+        yield from (line.encode("utf-8") for line in self._lines)   # requests yields bytes by default
 
 
 def answer(text):
@@ -104,6 +104,24 @@ def test_streaming(groq):
     chunk = lambda t: "data: " + json.dumps({"choices": [{"delta": {"content": t}}]})
     replies.append(Resp(200, lines=[chunk("Hel"), "", chunk("lo"), "data: [DONE]"]))
     assert "".join(llm.stream("s", "u")) == "Hello"
+
+
+def test_streaming_arabic_is_utf8(groq):
+    """A real requests.Response, like Groq's: an event stream with no charset in its content type.
+    Decoding it with the declared encoding gave Latin-1 mojibake on the live demo ("Ø·Ù...")."""
+    import io
+
+    import requests
+    _, replies = groq
+    r = requests.Response()
+    r.status_code, r.headers["content-type"] = 200, "text/event-stream"
+    r.encoding = requests.utils.get_encoding_from_headers(r.headers)   # what requests sets: ISO-8859-1
+    assert r.encoding == "ISO-8859-1"
+    events = "".join(f"data: {json.dumps({'choices': [{'delta': {'content': t}}]}, ensure_ascii=False)}\n\n"
+                     for t in ["طول ترويسة ", "UDP هو 8 بايت."])
+    r.raw = io.BytesIO((events + "data: [DONE]\n\n").encode("utf-8"))
+    replies.append(r)
+    assert "".join(llm.stream("s", "u")) == "طول ترويسة UDP هو 8 بايت."
 
 
 def test_provider_label(groq):

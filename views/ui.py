@@ -28,9 +28,9 @@ def demo_banner() -> None:
     if slot is None:
         return
     left = max(0, config.DEMO_ACTIONS - ss.get("demo_used", 0))
-    repo = f" [Run it locally]({config.REPO_URL}) to use your own lectures." if config.REPO_URL else ""
-    slot.info(f"**Live demo** with sample lectures, on a shared free API quota. You have **{left}** AI "
-              f"actions left in this session.{repo}")
+    repo = f" [Run it locally]({config.REPO_URL}) for unlimited use." if config.REPO_URL else ""
+    slot.info(f"**Live demo** with sample lectures (or upload your own below), on a shared free API quota. "
+              f"You have **{left}** AI actions left in this session.{repo}")
 
 
 def demo_guard(cost: int) -> None:

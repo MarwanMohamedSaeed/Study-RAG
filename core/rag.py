@@ -33,6 +33,12 @@ def format_history(history: list[dict] | None, max_turns: int = 2) -> str:
     return "CONVERSATION SO FAR:\n" + "\n".join(lines) + "\n\n"
 
 
+def clean_citations(answer: str) -> str:
+    """Normalise citation brackets some models use (gpt-oss writes 【file p.3】) to [file p.3],
+    so the citation line, the citation check and right-to-left rendering all recognise them."""
+    return re.sub(r"[【〔［]\s*([^【】〔〕［］\n]+?)\s*[】〕］]", r"[\1]", answer)
+
+
 def is_not_found(answer: str) -> bool:
     a = answer.strip().strip('"')
     return any(a.startswith(s[:25]) for s in prompts.NOT_FOUND.values())
@@ -75,5 +81,5 @@ def answer(question: str, doc_ids: list[str], history: list[dict] | None = None,
     req = prepare(question, doc_ids, history, k)
     if not req.sources:
         return {"answer": req.not_found_text, "sources": [], "not_found": True}
-    text = llm.generate(req.system, req.user).strip()
+    text = clean_citations(llm.generate(req.system, req.user).strip())
     return {"answer": text, "sources": req.sources, "not_found": is_not_found(text)}
