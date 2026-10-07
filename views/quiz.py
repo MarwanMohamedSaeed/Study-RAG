@@ -10,7 +10,7 @@ from core.grading import grade
 from core.llm import LLMError
 from core.mcq import generate_mixed, generate_quiz
 from core.schemas import LETTERS, QUESTION_TYPES
-from views.ui import demo_cap, demo_guard
+from views.ui import demo_cap, demo_guard, page_header
 
 ss = st.session_state
 ss.setdefault("grades", {})          # question index -> Grade, after submitting
@@ -21,7 +21,8 @@ TYPE_CHOICES = {**{v: [k] for k, v in QUESTION_TYPES.items()},
                 "Mixed: multiple choice, true/false, fill-in": ["mcq", "tf", "fill"],
                 "Mixed: all four types": ["mcq", "tf", "fill", "short"]}
 
-st.header("📝 Quiz")
+page_header("📝", "Quiz",
+            "Multiple choice, true/false, fill-in and short-answer questions, each checked against the source page.")
 if not selected and not ss.quiz:
     st.info("Select at least one document in the sidebar.")
     st.stop()

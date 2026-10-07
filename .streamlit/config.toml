@@ -5,3 +5,48 @@ maxUploadSize = 200
 
 [browser]
 gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"   # no developer menu for visitors
+
+# Look and feel: deep teal + warm amber; Inter for text. Streamlit accepts one web font per setting, so the
+# Arabic font (IBM Plex Sans Arabic) is loaded by views/ui.py and applied to right-to-left text.
+# Light and dark palettes follow the visitor's system setting.
+[theme]
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Plus Jakarta Sans:https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&display=swap"
+codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+headingFontWeights = [800, 700, 700, 600, 600, 600]
+baseRadius = "0.75rem"
+buttonRadius = "0.6rem"
+showWidgetBorder = true
+showSidebarBorder = true
+linkUnderline = false
+
+[theme.light]
+primaryColor = "#0F766E"
+backgroundColor = "#F7F8F6"
+secondaryBackgroundColor = "#ECEFEA"
+textColor = "#1C2321"
+linkColor = "#0F766E"
+borderColor = "#DDE2DC"
+chartCategoricalColors = ["#0F766E", "#F59E0B", "#6366F1", "#E11D48", "#0EA5E9", "#84CC16"]
+
+[theme.light.sidebar]
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F1F4F0"
+borderColor = "#E4E8E2"
+
+[theme.dark]
+primaryColor = "#2DD4BF"
+backgroundColor = "#0B1416"
+secondaryBackgroundColor = "#14211F"
+textColor = "#E6EEEC"
+linkColor = "#5EEAD4"
+borderColor = "#22322F"
+chartCategoricalColors = ["#2DD4BF", "#FBBF24", "#818CF8", "#FB7185", "#38BDF8", "#A3E635"]
+
+[theme.dark.sidebar]
+backgroundColor = "#0F1B1D"
+secondaryBackgroundColor = "#17252A"
+borderColor = "#1F2E2C"

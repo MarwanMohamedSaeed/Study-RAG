@@ -8,11 +8,12 @@ from core import cards, srs, store
 from core.export import anki_package, cards_csv
 from core.ingest import fmt_ref
 from core.llm import LLMError
-from views.ui import demo_cap, demo_guard, markdown, progress_bar
+from views.ui import demo_cap, demo_guard, markdown, page_header, progress_bar
 
 ss = st.session_state
 ss.setdefault("fc_revealed", False)
-st.header("🃏 Flashcards")
+page_header("🃏", "Flashcards",
+            "Spaced repetition: cards you miss come back sooner, cards you know wait longer.")
 
 scope = ss.selected_docs or None
 due = store.list_cards(scope, due_only=True)

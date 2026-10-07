@@ -15,9 +15,12 @@ import streamlit as st
 from core import config, llm, retriever, store
 from core.ingest import (SUPPORTED_TYPES, delete_document, delete_expired_uploads, get_embedder, ingest_file,
                          list_documents, reembed_outdated, visible_documents)
-from views.ui import demo_banner
+from views.ui import demo_banner, inject_css, label, sidebar_brand
 
-st.set_page_config(page_title="StudyRAG", page_icon="📚", layout="wide")
+ASSETS = Path(__file__).resolve().parent / "assets"
+st.set_page_config(page_title="StudyRAG", page_icon=str(ASSETS / "logo_icon.svg"), layout="wide")
+st.logo(str(ASSETS / "logo.svg"), size="large", icon_image=str(ASSETS / "logo_icon.svg"))
+inject_css()
 
 
 @st.cache_resource(show_spinner="Loading the embedding model (the first run downloads it)…")
@@ -68,18 +71,17 @@ ss.setdefault("answers", {})         # question index -> chosen letter (survives
 ss.setdefault("submitted", False)
 
 pages = st.navigation([
-    st.Page("views/ask.py", title="Ask the material", icon="💬", default=True),
-    st.Page("views/quiz.py", title="Quiz", icon="📝"),
-    st.Page("views/study.py", title="Study tools", icon="📋"),
-    st.Page("views/flashcards.py", title="Flashcards", icon="🃏"),
-    st.Page("views/exam.py", title="Exam simulation", icon="⏱️"),
-    st.Page("views/progress.py", title="Progress", icon="📈"),
+    st.Page("views/ask.py", title="Ask the material", icon=":material/forum:", default=True),
+    st.Page("views/quiz.py", title="Quiz", icon=":material/quiz:"),
+    st.Page("views/study.py", title="Study tools", icon=":material/menu_book:"),
+    st.Page("views/flashcards.py", title="Flashcards", icon=":material/style:"),
+    st.Page("views/exam.py", title="Exam simulation", icon=":material/timer:"),
+    st.Page("views/progress.py", title="Progress", icon=":material/insights:"),
 ])
 
 with st.sidebar:
-    st.title("📚 StudyRAG")
     llm_ok, llm_msg = llm.health()
-    st.caption(f"LLM: **{llm.provider_label()}** {'🟢' if llm_ok else '🔴'}  \nSearch: **{config.RETRIEVAL_MODE}**")
+    sidebar_brand(llm.provider_label(), llm_ok, config.RETRIEVAL_MODE)
     if not llm_ok:
         st.error(llm_msg)
     if retriever.reranker_error:
@@ -92,12 +94,14 @@ with st.sidebar:
         mine = [d for d in list_documents() if d["owner"] == ss.sid]
         uploads = []
         if config.DEMO_UPLOADS > 0:
+            label("Your lectures")
             uploads = st.file_uploader(
                 f"Try your own lecture (up to {config.DEMO_UPLOADS} files, {config.DEMO_UPLOAD_MB} MB each)",
-                type=SUPPORTED_TYPES, accept_multiple_files=True,
+                type=SUPPORTED_TYPES, accept_multiple_files=True, max_upload_size=config.DEMO_UPLOAD_MB,
                 help=f"Your files are visible only to you, in this browser session, and are deleted automatically "
                      f"after {config.DEMO_UPLOAD_HOURS:g} hours. Don't upload confidential material: its text is sent "
                      f"to a hosted AI model to answer your questions.")
+            st.caption(f"🔒 Private to your browser session · deleted after {config.DEMO_UPLOAD_HOURS:g} h")
             ss.setdefault("upload_skipped", set())
             new = [u for u in uploads or [] if (u.name, u.size) not in ss.ingested | ss.upload_skipped]
             too_big = [u for u in new if u.size > config.DEMO_UPLOAD_MB * 1024 * 1024]
@@ -113,6 +117,7 @@ with st.sidebar:
             # skipped files are remembered so the warning isn't repeated on every rerun (retried after a delete)
             ss.upload_skipped |= {(u.name, u.size) for u in new if u not in uploads}
     else:
+        label("Your lectures")
         uploads = st.file_uploader("Upload lectures (PDF, PowerPoint, Word)", type=SUPPORTED_TYPES,
                                    accept_multiple_files=True)
     for up in uploads or []:
@@ -141,7 +146,7 @@ with st.sidebar:
     docs = list_documents()
     if config.DEMO_MODE:   # shared sample lectures + this visitor's own uploads only
         docs = visible_documents(docs, ss.sid)
-    st.subheader("Documents")
+    label("Documents")
     if not docs:
         st.info("Upload a lecture (PDF, PowerPoint or Word) to get started.")
     labels = {d["doc_id"]: f"{d['filename']} ({d['n_pages']} {'p.' if d['unit'] == 'page' else d['unit'] + 's'})"
@@ -155,7 +160,7 @@ with st.sidebar:
                    placeholder="Choose document(s)", key="selected_docs")
     deletable = [d["doc_id"] for d in docs if not config.DEMO_MODE or d["owner"] == ss.get("sid")]
     if deletable:
-        with st.expander("Manage"):
+        with st.expander("Manage", icon=":material/settings:"):
             to_del = st.selectbox("Delete a document", [None] + deletable,
                                   format_func=lambda d: "-" if d is None else labels[d])
             if to_del and st.button("Delete", type="secondary"):

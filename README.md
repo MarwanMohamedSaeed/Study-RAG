@@ -59,11 +59,11 @@ All of it runs locally, so your course material never leaves your machine. 🔐
 
 ## 🎬 Demo
 
-> 📸 **Coming soon:** screenshots and a short demo video.
+🌐 **Try it live:** [study-rag.streamlit.app](https://study-rag-lmjzqqi2iwdflqb4ydxrze.streamlit.app/), with the sample lectures or your own (private to your session).
 
-| 💬 Ask the material | 📝 MCQ quiz | 🏆 Quiz results |
+| 💬 Ask the material | 🌙 Arabic answer, dark theme | 📝 Quiz builder |
 |:-:|:-:|:-:|
-| ![Chat](docs/chat.png) | ![Quiz](docs/quiz.png) | ![Results](docs/results.png) |
+| ![Ask the material](docs/screenshots/ask-light.png) | ![Arabic answer with page citations](docs/screenshots/ask-arabic-dark.png) | ![Quiz builder](docs/screenshots/quiz-light.png) |
 
 <!-- 🎥 [Watch the 1-minute demo](https://youtu.be/YOUR_VIDEO) -->
 

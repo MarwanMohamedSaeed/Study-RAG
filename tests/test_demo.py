@@ -10,6 +10,11 @@ from core import config, ingest, retriever, store
 APP = str(Path(__file__).resolve().parent.parent / "app.py")
 
 
+def banner(at) -> str:
+    """The sidebar demo card (raw HTML)."""
+    return " ".join(e.proto.body for e in at.sidebar.get("html") if "srag-card" in e.proto.body)
+
+
 @pytest.fixture
 def demo(chroma, tmp_path, monkeypatch):
     """Demo mode on a temporary database; the sample lectures are preloaded into it."""
@@ -25,8 +30,7 @@ def demo(chroma, tmp_path, monkeypatch):
 
 
 def test_demo_banner_samples_and_uploader(demo):
-    sidebar_text = " ".join(i.value for i in demo.sidebar.info)
-    assert "Live demo" in sidebar_text and "3** AI actions left" in sidebar_text
+    assert "Live demo" in banner(demo) and "<b>3</b> of 3 AI actions left" in banner(demo)
     assert len(demo.get("file_uploader")) == 1                       # private uploads, limited
     names = {d["filename"] for d in ingest.list_documents()}
     assert {"networks_lecture.pdf", "network_layer_lecture.pdf", "routing_slides.pptx"} <= names
@@ -51,7 +55,7 @@ def test_demo_uploads_are_private(demo, sample_pdf, chroma):
 def test_demo_budget_is_spent_and_enforced(demo):
     demo.chat_input[0].set_value("How long is the UDP header?").run()
     assert not demo.exception and demo.session_state["demo_used"] == 1
-    assert "**2** AI actions left" in " ".join(i.value for i in demo.sidebar.info)   # updated in the same run
+    assert "<b>2</b> of 3 AI actions left" in banner(demo)   # updated in the same run
     demo.session_state["demo_used"] = 3
     demo.chat_input[0].set_value("And the TCP header?").run()
     assert any("used its AI budget" in w.value for w in demo.warning)

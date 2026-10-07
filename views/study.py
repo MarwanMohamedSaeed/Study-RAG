@@ -6,10 +6,11 @@ from core import store, study
 from core.export import glossary_csv, glossary_markdown, markdown_to_pdf
 from core.ingest import fmt_ref
 from core.llm import LLMError
-from views.ui import demo_guard, markdown, progress_bar
+from views.ui import demo_guard, markdown, page_header, progress_bar
 
 ss = st.session_state
-st.header("📋 Study tools")
+page_header("📋", "Study tools",
+            "Cheat sheets, page explanations in Arabic or English, a bilingual glossary and concept maps.")
 if not ss.selected_docs:
     st.info("Select a document in the sidebar.")
     st.stop()

@@ -7,11 +7,12 @@ import streamlit as st
 from core import exam, store
 from core.llm import LLMError
 from core.schemas import LETTERS
-from views.ui import demo_cap, demo_guard, progress_bar
+from views.ui import demo_cap, demo_guard, page_header, progress_bar
 
 ss = st.session_state
 ss.setdefault("exam", None)   # dict while an exam is prepared / running / finished
-st.header("⏱️ Exam simulation")
+page_header("⏱️", "Exam simulation",
+            "A timed mixed exam, graded at the end like the real thing.")
 
 
 def _remember(i: int, key: str):

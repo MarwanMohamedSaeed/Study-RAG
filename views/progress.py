@@ -13,11 +13,12 @@ from core.ingest import fmt_ref
 from core.llm import LLMError
 from core.mcq import generate_mixed, shuffle_options
 from core.schemas import MCQ
-from views.ui import demo_cap, demo_guard, progress_bar
+from views.ui import demo_cap, demo_guard, page_header, progress_bar
 
 REVIEW_BELOW = 0.6  # pages under 60% correct are flagged for review
 ss = st.session_state
-st.header("📈 Progress")
+page_header("📈", "Progress",
+            "Your accuracy by page and over time, and what to practise next.")
 
 totals = store.totals()
 if not totals["answered"]:
