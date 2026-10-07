@@ -1,6 +1,7 @@
-# StudyRAG live demo on a free Hugging Face Space (CPU basic: 2 vCPU, 16 GB RAM).
-# The LLM comes from Groq's free API (GROQ_API_KEY is a Space *secret*); embeddings and the
-# re-ranker run on the CPU inside the container. Built by deploy/push_to_space.py.
+# StudyRAG demo as a Hugging Face Docker Space.
+# NOTE (Oct 2026): Hugging Face now requires a PRO subscription for Docker/Gradio Spaces on CPU hardware,
+# so the free deployment uses Streamlit Community Cloud instead (see README). This file is kept for
+# anyone with PRO. The LLM comes from Groq (GROQ_API_KEY is a Space *secret*).
 FROM python:3.11-slim
 
 # DejaVu Sans has Arabic glyphs (PDF exports)
@@ -13,21 +14,16 @@ USER user
 ENV HOME=/home/user PATH=/home/user/.local/bin:$PATH PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
     MODEL_CACHE=/home/user/models HF_HOME=/home/user/models \
     CHROMA_DIR=/home/user/data/chroma DB_PATH=/tmp/studyrag/progress.db \
-    DEMO_MODE=1 LLM_PROVIDER=groq RETRIEVAL_MODE=hybrid+rerank
+    DEMO_MODE=1 LLM_PROVIDER=groq MODEL_BACKEND=onnx RETRIEVAL_MODE=hybrid+rerank
 WORKDIR /home/user/app
 
-# CPU-only PyTorch (~2 GB smaller than the CUDA build)
-RUN pip install --user torch --index-url https://download.pytorch.org/whl/cpu
 COPY --chown=user requirements.txt .
 RUN pip install --user -r requirements.txt
 
-# Bake both models into the image so the first visitor doesn't wait for a ~900 MB download
-RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
-SentenceTransformer('intfloat/multilingual-e5-small'); CrossEncoder('cross-encoder/mmarco-mMiniLMv2-L12-H384-v1')"
-
 COPY --chown=user . .
-# Index the sample lectures at build time, so the demo opens ready to use
-RUN python -c "from samples.make_benchmark_corpus import corpus; from core.ingest import ingest_file; \
+# Bake the int8 ONNX models and the sample-lecture index into the image
+RUN python -c "from core import ingest, retriever; ingest.get_embedder(); retriever._load_reranker()" && \
+    python -c "from samples.make_benchmark_corpus import corpus; from core.ingest import ingest_file; \
 [ingest_file(p.read_bytes(), p.name) for p in corpus()]"
 
 EXPOSE 8501

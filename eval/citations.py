@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 
 from core import config, ingest, rag, retriever  # noqa: E402
 from core.citations import check  # noqa: E402
-from eval.benchmark import BENCH, RESULTS  # noqa: E402
+from eval.benchmark import BENCH, write_section  # noqa: E402
 from samples.make_benchmark_corpus import corpus  # noqa: E402
 
 CACHE = ROOT / "data" / "eval_answers.json"
@@ -119,11 +119,8 @@ def main():
             print(f"- {r['q'][:70]}\n    corrected {r['corrected']} unsupported {[u[:70] for u in r['unsupported']]}"
                   f"  ({ok(r['before'])} -> {ok(r['after'])})")
     if args.write:
-        text = RESULTS.read_text(encoding="utf-8") if RESULTS.exists() else ""
-        text = text.split("\n# Citation check")[0].rstrip()
-        RESULTS.write_text(f"{text}\n\n# Citation check\n\n_{len(rows)} benchmark questions answered by "
-                           f"`{config.OLLAMA_MODEL}` with `{config.RETRIEVAL_MODE}` retrieval._\n\n{md}\n",
-                           encoding="utf-8")
+        write_section("Citation check", f"_{len(rows)} benchmark questions answered by `{config.OLLAMA_MODEL}` with "
+                                        f"`{config.RETRIEVAL_MODE}` retrieval._\n\n{md}")
         print("Saved eval/results.md")
 
 

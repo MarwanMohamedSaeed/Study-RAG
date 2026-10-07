@@ -221,6 +221,9 @@ _embedder_lock = threading.Lock()
 
 @lru_cache(maxsize=1)
 def _load_embedder():
+    if config.MODEL_BACKEND == "onnx":
+        from core.onnx_backend import OnnxEmbedder
+        return OnnxEmbedder(config.EMBED_MODEL)
     from sentence_transformers import SentenceTransformer
     return SentenceTransformer(config.EMBED_MODEL, device="cpu")
 
@@ -282,7 +285,8 @@ def ingest_file(file_bytes: bytes, filename: str, progress: ProgressCb | None = 
         return result
 
     col = client.get_or_create_collection(
-        doc_id, metadata={"filename": filename, "n_pages": len(pages), "unit": unit, "hnsw:space": "cosine"})
+        doc_id, metadata={"filename": filename, "n_pages": len(pages), "unit": unit, "hnsw:space": "cosine",
+                          "embedder": config.EMBEDDER_ID})
     for start in range(0, len(chunks), EMBED_BATCH):
         batch = chunks[start:start + EMBED_BATCH]
         progress(0.1 + 0.9 * start / len(chunks), f"Embedding chunks {start + 1}-{start + len(batch)} of {len(chunks)}")
@@ -311,6 +315,32 @@ def list_documents(client=None) -> list[dict]:
         docs.append({"doc_id": col.name, "filename": meta.get("filename", col.name),
                      "n_pages": meta.get("n_pages", 0), "unit": meta.get("unit", "page"), "n_chunks": col.count()})
     return sorted(docs, key=lambda d: d["filename"].lower())
+
+
+def reembed_outdated(client=None, progress: ProgressCb | None = None) -> list[str]:
+    """Re-embed documents that were indexed with a different embedding model or backend.
+
+    Query and passage vectors must come from the same model; mixing (e.g. a full-precision index
+    with int8 queries) quietly degrades search. Documents indexed before this check existed have no
+    'embedder' entry and are treated as the old default (full precision). Returns the file names updated."""
+    client = client or get_client()
+    progress = progress or (lambda f, m: None)
+    updated = []
+    for c in client.list_collections():
+        col = client.get_collection(getattr(c, "name", c))
+        meta = dict(col.metadata or {})
+        if meta.get("embedder", f"{config.EMBED_MODEL}|torch") == config.EMBEDDER_ID or col.count() == 0:
+            continue
+        name = meta.get("filename", col.name)
+        data = col.get(include=["documents"])
+        for start in range(0, len(data["ids"]), EMBED_BATCH):
+            progress(start / len(data["ids"]), f"Updating the search index for {name}")
+            col.update(ids=data["ids"][start:start + EMBED_BATCH],
+                       embeddings=embed_passages(data["documents"][start:start + EMBED_BATCH]))
+        meta["embedder"] = config.EMBEDDER_ID
+        col.modify(metadata={k: v for k, v in meta.items() if not k.startswith("hnsw:")})
+        updated.append(name)
+    return updated
 
 
 def delete_document(doc_id: str, client=None) -> None:

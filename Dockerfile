@@ -11,16 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-co
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-# CPU-only PyTorch keeps the image ~2 GB smaller than the default CUDA wheels
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
 COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-# Bake the embedding model and the re-ranker into the image so the first question is fast
-RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
-SentenceTransformer('intfloat/multilingual-e5-small'); CrossEncoder('cross-encoder/mmarco-mMiniLMv2-L12-H384-v1')"
+RUN pip install -r requirements.txt   # default int8 ONNX backend: no PyTorch
 
 COPY . .
+# Bake the embedding model and the re-ranker (int8 ONNX, ~230 MB) into the image so the first question is fast
+RUN python -c "from core import ingest, retriever; ingest.get_embedder(); retriever._load_reranker()"
 EXPOSE 8501
 VOLUME ["/app/data"]
 HEALTHCHECK CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"

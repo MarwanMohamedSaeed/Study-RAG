@@ -191,6 +191,9 @@ reranker_error: str | None = None   # set if the model could not be loaded (the 
 
 @lru_cache(maxsize=1)
 def _load_reranker():
+    if config.MODEL_BACKEND == "onnx":
+        from core.onnx_backend import OnnxCrossEncoder
+        return OnnxCrossEncoder(config.RERANK_MODEL, tokenizer_repo=config.EMBED_MODEL)  # same XLM-R tokenizer
     from sentence_transformers import CrossEncoder
     return CrossEncoder(config.RERANK_MODEL, max_length=512, device="cpu")
 

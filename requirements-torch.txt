@@ -1,0 +1,5 @@
+# Optional: full-precision models via sentence-transformers + PyTorch (MODEL_BACKEND=torch in .env).
+# Same accuracy as the default int8 ONNX backend on the benchmark, but ~3x the memory and a ~2 GB install.
+# Tip: install CPU-only PyTorch first:  pip install torch --index-url https://download.pytorch.org/whl/cpu
+-r requirements.txt
+sentence-transformers>=3.0

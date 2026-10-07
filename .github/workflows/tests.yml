@@ -28,9 +28,7 @@ jobs:
           key: hf-${{ hashFiles('core/config.py') }}
 
       - name: Install dependencies
-        run: |
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt   # default ONNX backend: no PyTorch
 
       - name: Run tests
         run: pytest -q

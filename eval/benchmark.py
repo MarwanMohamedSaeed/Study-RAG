@@ -52,6 +52,22 @@ def evaluate(mode: str, questions: list[dict], doc_ids: list[str], client, k: in
             "ms_per_query": ms, "misses": misses}
 
 
+def write_section(title: str, body: str) -> None:
+    """Replace one '# title' section of eval/results.md, keeping the other sections."""
+    text = RESULTS.read_text(encoding="utf-8") if RESULTS.exists() else ""
+    sections = [s for s in ("\n" + text).split("\n# ") if s.strip()]
+    new, done = [], False
+    for s in sections:
+        if s.split("\n", 1)[0].strip() == title:
+            new.append(f"{title}\n\n{body.strip()}\n")
+            done = True
+        else:
+            new.append(s.rstrip() + "\n")
+    if not done:
+        new.append(f"{title}\n\n{body.strip()}\n")
+    RESULTS.write_text("\n".join("# " + s for s in new), encoding="utf-8")
+
+
 def table(results: list[dict]) -> str:
     lines = ["| Mode | hit@1 | hit@3 | hit@5 | MRR@5 | " + " | ".join(f"{c} hit@1" for c in CATEGORIES) + " | ms/query |",
              "|---|" + "---:|" * (5 + len(CATEGORIES))]
@@ -92,12 +108,13 @@ def main():
             for q, gold, found, rank in r["misses"]:
                 print(f"  [{rank or '-'}] {q}\n      gold {gold}\n      got  {found}")
     if args.write:
-        RESULTS.write_text(
-            f"# Retrieval benchmark\n\n_{date.today()} · {len(doc_ids)} documents, {n_chunks} chunks, "
-            f"{len(questions)} hand-written questions (`eval/benchmark.json`) · top-k = 5 · CPU embeddings_\n\n"
-            f"{md}\n\nhit@k: a gold page is among the top k chunks. MRR@5: mean of 1/rank of the first gold "
-            f"chunk. Categories: keyword ({bench['categories']['keyword']}), paraphrase, confusable, "
-            f"arabic (Arabic questions about English slides).\n", encoding="utf-8")
+        from core import config
+        write_section("Retrieval benchmark",
+                      f"_{date.today()} · {len(doc_ids)} documents, {n_chunks} chunks, {len(questions)} hand-written "
+                      f"questions (`eval/benchmark.json`) · top-k = 5 · model backend: `{config.MODEL_BACKEND}`_\n\n"
+                      f"{md}\n\nhit@k: a gold page is among the top k chunks. MRR@5: mean of 1/rank of the first gold "
+                      f"chunk. Categories: keyword ({bench['categories']['keyword']}), paraphrase, confusable, "
+                      f"arabic (Arabic questions about English slides).")
         print(f"\nSaved {RESULTS.relative_to(ROOT)}")
 
 

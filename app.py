@@ -12,13 +12,14 @@ from pathlib import Path
 import streamlit as st
 
 from core import config, llm, retriever, store
-from core.ingest import SUPPORTED_TYPES, delete_document, get_embedder, ingest_file, list_documents
+from core.ingest import (SUPPORTED_TYPES, delete_document, get_embedder, ingest_file, list_documents,
+                         reembed_outdated)
 from views.ui import demo_banner
 
 st.set_page_config(page_title="StudyRAG", page_icon="📚", layout="wide")
 
 
-@st.cache_resource(show_spinner="Loading embedding model (first run downloads ~470 MB)...")
+@st.cache_resource(show_spinner="Loading the embedding model (the first run downloads it)…")
 def _warm_embedder():
     return get_embedder()
 
@@ -33,7 +34,14 @@ def _preload_samples():
     return True
 
 
+@st.cache_resource(show_spinner="Updating the search index for the current embedding model…")
+def _reembed_outdated():
+    """Once per server start: documents indexed with another model/backend are re-embedded."""
+    return reembed_outdated()
+
+
 _warm_embedder()
+_reembed_outdated()
 ss = st.session_state
 if config.DEMO_MODE:
     _preload_samples()

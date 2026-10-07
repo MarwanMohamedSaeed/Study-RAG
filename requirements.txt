@@ -1,7 +1,11 @@
-streamlit>=1.38
+# Default install: models run with ONNX Runtime (int8), no PyTorch needed.
+# For the optional full-precision backend (MODEL_BACKEND=torch): pip install -r requirements-torch.txt
+streamlit>=1.40
 pymupdf>=1.24
 chromadb>=0.5.5
-sentence-transformers>=3.0
+onnxruntime>=1.17
+tokenizers>=0.19
+huggingface_hub>=0.23
 pydantic>=2.7
 python-dotenv>=1.0
 requests>=2.31

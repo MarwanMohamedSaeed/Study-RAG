@@ -38,6 +38,12 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 
 EMBED_MODEL = os.getenv("EMBED_MODEL", "intfloat/multilingual-e5-small")
+# onnx (default): the models' int8 ONNX exports via ONNX Runtime. Measured on the benchmark: same
+#   accuracy as full precision (hit@1 92% vs 90%), 69% less memory (668 MB vs 2,155 MB), faster,
+#   and no PyTorch install. See core/onnx_backend.py and eval/results.md.
+# torch: full-precision models via sentence-transformers (pip install -r requirements-torch.txt).
+MODEL_BACKEND = os.getenv("MODEL_BACKEND", "onnx").strip().lower()
+EMBEDDER_ID = f"{os.getenv('EMBED_MODEL', 'intfloat/multilingual-e5-small')}|{MODEL_BACKEND}"
 CHROMA_DIR = os.getenv("CHROMA_DIR", str(ROOT / "data" / "chroma"))
 DB_PATH = os.getenv("DB_PATH", str(ROOT / "data" / "studyrag.db"))  # quiz history / progress
 

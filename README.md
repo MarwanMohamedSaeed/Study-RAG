@@ -103,7 +103,7 @@ streamlit run app.py
 
 > 🖱️ **On Windows, after the first setup, just double-click `run.bat`.** It starts Ollama if it isn't running and opens the app in your browser. Close its window to stop StudyRAG.
 
-> ℹ️ The first launch downloads the embedding model (~470 MB). After that, everything works **offline**.
+> ℹ️ The first launch downloads the two small models (~230 MB, int8 ONNX). After that, everything works **offline**. No PyTorch is needed; for the optional full-precision backend, install `requirements-torch.txt` and set `MODEL_BACKEND=torch`.
 
 ### 🐳 Docker
 
@@ -116,18 +116,31 @@ docker run -p 8501:8501 -v studyrag-data:/app/data --env-file .env studyrag
 
 ### ☁️ Deploy your own live demo (free)
 
-The demo runs on a **free Hugging Face Space** (CPU) and uses **Groq's free API** for the LLM, so it costs nothing.
+The demo runs on **Streamlit Community Cloud** (free hosting for Streamlit apps) and uses **Groq's free API** for
+the LLM, so it costs nothing. It fits the free ~1 GB of memory thanks to the int8 ONNX backend (668 MB for both models).
 
-1. Create a free [Groq API key](https://console.groq.com/keys) and a Hugging Face [write token](https://huggingface.co/settings/tokens).
-2. Put them in `.env` as `GROQ_API_KEY` and `HF_TOKEN` (optionally `REPO_URL` = your GitHub link).
-3. Deploy:
+1. Push the project to a **public GitHub repository**.
+2. Sign in at [share.streamlit.io](https://share.streamlit.io) with GitHub → **Create app** → choose the repository,
+   branch `main` and main file `app.py`.
+3. Under **Advanced settings**, choose **Python 3.11** and paste these **Secrets** (Streamlit passes them to the app
+   as environment variables; they are never stored in the repository):
 
-```bash
-python deploy/push_to_space.py --space <hf-username>/studyrag --dry-run   # check what gets uploaded
-python deploy/push_to_space.py --space <hf-username>/studyrag
+```toml
+DEMO_MODE = "1"
+LLM_PROVIDER = "groq"
+GROQ_API_KEY = "your Groq key from https://console.groq.com/keys"
+REPO_URL = "https://github.com/<you>/<repo>"
 ```
 
-The Groq key is stored as a **Space secret**, never in the uploaded files. The image bakes in both models and the sample-lecture index, and runs in demo mode: no uploads (a shared server would show every visitor's files to everyone), private progress per browser session, and an AI-action budget per visitor so the shared free quota (Groq: about 200k tokens per model per day) lasts.
+4. **Deploy.** The first build installs the packages and downloads the models (a few minutes).
+
+Demo mode preloads the sample lectures and turns off uploads (on a shared server every visitor would see everyone's
+files), keeps quiz history and flashcards private to each browser session, and gives each visitor a budget of AI
+actions so the shared free quota (Groq: about 200k tokens per model per day, three models) lasts. Free apps sleep
+after a while without visitors and wake up on the next visit.
+
+> Hugging Face Spaces now requires a PRO subscription for Docker apps on CPU. If you have one,
+> `python deploy/push_to_space.py --space <user>/studyrag` deploys the same demo there.
 
 ---
 
@@ -146,6 +159,7 @@ All settings live in `.env` (see [`.env.example`](.env.example)).
 | 🔑 `ANTHROPIC_API_KEY` | | Required when `LLM_PROVIDER=claude` |
 | ☁️ `CLAUDE_MODEL` | `claude-haiku-4-5-20251001` | Claude model to use |
 | 🧬 `EMBED_MODEL` | `intfloat/multilingual-e5-small` | Multilingual embedding model |
+| ⚙️ `MODEL_BACKEND` | `onnx` | `onnx` (int8, ~670 MB RAM, no PyTorch) or `torch` (full precision, ~2.2 GB RAM; `pip install -r requirements-torch.txt`). Same accuracy on the benchmark |
 | ✂️ `CHUNK_SIZE` / `CHUNK_OVERLAP` | `800` / `150` | Chunking, in characters |
 | 🔎 `TOP_K` | `5` | Chunks retrieved per question |
 | 🔀 `RETRIEVAL_MODE` | `hybrid+rerank` | `vector` · `keyword` · `hybrid` · `hybrid+rerank` (chosen by the benchmark below) |
@@ -235,10 +249,10 @@ flowchart LR
 |---|---|
 | 🖥️ UI | Streamlit |
 | 📄 PDF parsing | PyMuPDF |
-| 🧬 Embeddings | sentence-transformers · `intfloat/multilingual-e5-small` |
+| 🧬 Embeddings | `intfloat/multilingual-e5-small`, int8 ONNX via ONNX Runtime (sentence-transformers optional) |
 | 💾 Vector store | ChromaDB (persistent) |
 | 🔀 Keyword search | BM25 (`rank_bm25`) + Reciprocal Rank Fusion |
-| 🎯 Re-ranking | sentence-transformers cross-encoder · `mmarco-mMiniLMv2` (multilingual) |
+| 🎯 Re-ranking | cross-encoder `mmarco-mMiniLMv2` (multilingual), int8 ONNX |
 | 📈 Progress store | SQLite |
 | 🤖 LLM | Ollama (Qwen3-4B) · Anthropic Claude |
 | 🛡️ Validation | Pydantic v2 |
@@ -298,7 +312,7 @@ studyrag/
 ## 🧪 Tests & evaluation
 
 ```bash
-pytest -q                                # ✅ 120 tests, no LLM or GPU needed (~45 s)
+pytest -q                                # ✅ 136 tests, no LLM or GPU needed (~20 s)
 python eval/benchmark.py --modes vector keyword hybrid hybrid+rerank   # 📊 compare search modes
 python eval/citations.py                 # 🔎 citation accuracy of real answers (uses the LLM, answers are cached)
 python eval/run_eval.py                  # ⚡ quick 10-question regression check
@@ -314,22 +328,30 @@ words with the slides, and Arabic questions about English slides. Full table in 
 
 | Search mode | hit@1 | hit@5 | MRR@5 | Paraphrase | Arabic → English | Time / question |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
-| Vector only (e5) | 78% | 94% | 0.848 | 57% | 60% | 0.04 s |
-| Keyword only (BM25) | 76% | 94% | 0.832 | 64% | 60% | 0.04 s |
-| Hybrid (RRF) | 82% | 94% | 0.873 | 64% | 60% | 0.05 s |
-| **Hybrid + re-rank** ✅ | **90%** | **98%** | **0.930** | **71%** | **90%** | 0.7 s |
+| Vector only (e5) | 76% | 96% | 0.842 | 50% | 60% | 0.01 s |
+| Keyword only (BM25) | 76% | 94% | 0.832 | 64% | 60% | 0.01 s |
+| Hybrid (RRF) | 84% | 96% | 0.888 | 71% | 60% | 0.02 s |
+| **Hybrid + re-rank** ✅ | **92%** | **98%** | **0.942** | **71%** | **100%** | 0.5 s |
 
 > 💡 Arabic questions were stuck at 60% because multilingual embeddings pull an Arabic question toward Arabic text
 > (the summary pages) instead of the English page that answers it. The cross-encoder judges relevance, not language.
 
+**Model backend**: the default int8 ONNX models score the same as full precision (hit@1 92% vs 90%: one question)
+while using **668 MB instead of 2,155 MB** of memory and answering faster, with no PyTorch install.
+
+| Backend | hit@1 | MRR@5 | Memory | Time / question |
+|---|:-:|:-:|:-:|:-:|
+| Full precision (PyTorch) | 90% | 0.930 | 2,155 MB | 0.71 s |
+| **int8 ONNX (default)** | **92%** | **0.942** | **668 MB** | **0.51 s** |
+
 **Citation check**: on 48 answered benchmark questions, the model's own citations were already 100% correct with
 hybrid + re-rank retrieval. A first checker based on embeddings made them *worse* (94%), so it was replaced: the
-current one uses the re-ranker as a judge, made **0 wrong corrections**, and repaired **56%** of deliberately
+current one uses the re-ranker as a judge, made **0 wrong corrections**, and repaired **54%** of deliberately
 injected wrong citations. It runs as a silent safety net.
 
 | | |
 |---|:-:|
-| ✅ Unit tests | **120 / 120 passing** |
+| ✅ Unit tests | **136 / 136 passing** |
 | 🎯 Quick regression check (`run_eval.py`) | 10 / 10 |
 
 ### ⏱️ Performance
@@ -338,7 +360,8 @@ injected wrong citations. It runs as a silent safety net.
 
 | Task | Time |
 |---|:-:|
-| 💬 Chat answer | ~5–9 s (search + re-rank ≈ 0.7 s of it) |
+| 💬 Chat answer (local Ollama) | ~5–9 s (search + re-rank ≈ 0.5 s of it) |
+| ⚡ Chat answer / 5-question quiz with Groq | ~2–4 s / ~4 s |
 | 📝 Quiz question (incl. verification) | ~10–25 s |
 | 📋 Cheat sheet (10-page lecture) | ~80 s, then instant (cached) |
 | 🌍 Explain a page | ~60 s |
@@ -371,7 +394,7 @@ injected wrong citations. It runs as a silent safety net.
 - [x] **Phase 2 · Learning loop**: ✍️ true/false, fill-in, short answer · 🎯 weak-spot quizzes · 🃏 flashcards with spaced repetition + Anki export
 - [x] **Phase 3 · Quality**: 📏 larger evaluation · 🔀 hybrid search + re-ranker · ✅ citation checking
 - [ ] **Phase 4 · New inputs**: 🖼️ OCR for scanned PDFs · 🎥 lecture recordings (Whisper)
-- [ ] **Phase 5 · Online**: ☁️ live demo on Hugging Face Spaces + Groq's free API (code and deploy script ready; deployment pending)
+- [ ] **Phase 5 · Online**: ☁️ live demo on Streamlit Community Cloud + Groq's free API (ready to deploy)
 
 ## ⚠️ Limitations
 
