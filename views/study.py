@@ -6,7 +6,7 @@ from core import store, study
 from core.export import glossary_csv, glossary_markdown, markdown_to_pdf
 from core.ingest import fmt_ref
 from core.llm import LLMError
-from views.ui import markdown, progress_bar
+from views.ui import demo_guard, markdown, progress_bar
 
 ss = st.session_state
 st.header("📋 Study tools")
@@ -43,6 +43,7 @@ with t_sheet:
     sheet = store.get_note(key)
     if c2.button("Regenerate" if sheet else "Generate cheat sheet", type="secondary" if sheet else "primary",
                  key="sheet_go"):
+        demo_guard(3)
         sheet = run(study.cheat_sheet, doc, fname, lang, refresh=True)
     if sheet:
         with st.container(border=True):
@@ -74,6 +75,7 @@ with t_explain:
             markdown(cached, box)
         elif go and text:
             try:
+                demo_guard(1)
                 key, out = study.explain_page(doc, fname, int(page), lang, refresh=True)
                 with box:
                     answer = st.write_stream(out) if not isinstance(out, str) else out
@@ -95,6 +97,7 @@ with t_gloss:
     terms = study.glossary(doc, max_terms) if cached else None
     if c2.button("Rebuild glossary" if terms else "Build glossary", type="secondary" if terms else "primary",
                  key="gloss_go"):
+        demo_guard(4)
         terms = run(study.glossary, doc, max_terms, refresh=True)
     if terms:
         q = st.text_input("Search", placeholder="Filter terms (English or Arabic)", key="gloss_q").strip().casefold()
@@ -120,6 +123,7 @@ with t_map:
     cached = store.get_note(store.note_key("conceptmap", [doc], n=n_concepts))
     cmap = study.concept_map(doc, fname, n_concepts) if cached else None
     if c2.button("Redraw" if cmap else "Draw concept map", type="secondary" if cmap else "primary", key="map_go"):
+        demo_guard(2 if store.latest_note("cheatsheet", doc) else 5)
         cmap = run(study.concept_map, doc, fname, n_concepts, refresh=True)
         if cmap is None:
             st.warning("The model did not return a usable concept map. Try again or change the number of concepts.")

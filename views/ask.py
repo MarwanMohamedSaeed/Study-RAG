@@ -3,6 +3,7 @@ import streamlit as st
 
 from core import citations, llm, rag
 from core.llm import LLMError
+from views.ui import demo_guard
 from views.ui import markdown as _markdown
 
 ss = st.session_state
@@ -48,6 +49,7 @@ question = st.chat_input("Ask a question about your lectures (English or Arabic)
 if not selected:
     st.info("Select at least one document in the sidebar.")
 if question:
+    demo_guard(1)
     history = [{"role": m["role"], "content": m["content"]} for m in ss.messages]
     with convo.chat_message("user"):
         _markdown(question)

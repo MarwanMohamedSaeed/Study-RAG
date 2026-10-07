@@ -1,4 +1,5 @@
 """Quiz: four question types (or mixed), take it, get graded, save to progress, export."""
+import math
 import time
 
 import streamlit as st
@@ -9,6 +10,7 @@ from core.grading import grade
 from core.llm import LLMError
 from core.mcq import generate_mixed, generate_quiz
 from core.schemas import LETTERS, QUESTION_TYPES
+from views.ui import demo_cap, demo_guard
 
 ss = st.session_state
 ss.setdefault("grades", {})          # question index -> Grade, after submitting
@@ -27,7 +29,7 @@ if not selected and not ss.quiz:
 if selected:
     with st.form("quiz_form"):
         c1, c2 = st.columns(2)
-        n_q = c1.slider("Number of questions", 5, 30, 10)
+        n_q = c1.slider("Number of questions", 5, max(5, demo_cap(30)), min(10, demo_cap(30)))
         difficulty = c2.radio("Difficulty", ["easy", "medium", "hard"], index=1, horizontal=True)
         qtype = st.selectbox("Question type", list(TYPE_CHOICES),
                              help="Short answers are graded by the LLM against the lecture when you submit.")
@@ -40,6 +42,7 @@ if selected:
         bar = st.progress(0.0, text="Selecting material…")
         t0 = time.time()
         kinds = TYPE_CHOICES[qtype]
+        demo_guard(2 * math.ceil(n_q / 5) + len(kinds) - 1)   # writing + checking batches
         opts = dict(topic=topic or None, page_range=page_range if use_range else None,
                     progress=lambda f, m: bar.progress(min(f, 1.0), text=m))
         try:
@@ -121,6 +124,8 @@ if ss.quiz:
     if not ss.submitted and c1.button("Submit answers", type="primary"):
         answers = [ss.answers.get(i) for i in range(len(quiz))]
         n_short = sum(q.kind == "short" for q in quiz)
+        if n_short:
+            demo_guard(n_short)
         try:
             with st.spinner(f"Grading {n_short} short answer{'s' if n_short != 1 else ''}…" if n_short else "Grading…"):
                 ss.grades = {i: grade(q, a) for i, (q, a) in enumerate(zip(quiz, answers))}

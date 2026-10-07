@@ -53,7 +53,7 @@ All of it runs locally, so your course material never leaves your machine. 🔐
 | 🧠 | **Concept map** | The lecture's main concepts and how they relate, drawn as a diagram with source pages; export as Mermaid for Notion, Obsidian or GitHub. |
 | ⏱️ | **Exam simulation** | Several lectures, a difficulty mix, a live countdown that auto-submits at zero, and a report by difficulty and weak pages. |
 | 📤 | **Export** | JSON, Markdown, and a printable PDF with the answer key on a separate page. |
-| 🔒 | **Free & private** | Runs offline with [Ollama](https://ollama.com) on a 4 GB GPU, or switch to the Claude API with one line. |
+| 🔒 | **Free & private** | Runs offline with [Ollama](https://ollama.com) on a 4 GB GPU. One `.env` line switches to **Groq's free API** (bigger models, no GPU needed), any OpenAI-compatible API, or Claude. |
 
 ---
 
@@ -112,6 +112,21 @@ docker run -p 8501:8501 -v studyrag-data:/app/data --env-file .env studyrag
 
 > 🔗 The container connects to Ollama on your host machine via `host.docker.internal:11434`.
 
+### ☁️ Deploy your own live demo (free)
+
+The demo runs on a **free Hugging Face Space** (CPU) and uses **Groq's free API** for the LLM, so it costs nothing.
+
+1. Create a free [Groq API key](https://console.groq.com/keys) and a Hugging Face [write token](https://huggingface.co/settings/tokens).
+2. Put them in `.env` as `GROQ_API_KEY` and `HF_TOKEN` (optionally `REPO_URL` = your GitHub link).
+3. Deploy:
+
+```bash
+python deploy/push_to_space.py --space <hf-username>/studyrag --dry-run   # check what gets uploaded
+python deploy/push_to_space.py --space <hf-username>/studyrag
+```
+
+The Groq key is stored as a **Space secret**, never in the uploaded files. The image bakes in both models and the sample-lecture index, and runs in demo mode: no uploads (a shared server would show every visitor's files to everyone), private progress per browser session, and an AI-action budget per visitor so the shared free quota (Groq: about 200k tokens per model per day) lasts.
+
 ---
 
 ## ⚙️ Configuration
@@ -120,7 +135,9 @@ All settings live in `.env` (see [`.env.example`](.env.example)).
 
 | Variable | Default | Description |
 |---|---|---|
-| 🤖 `LLM_PROVIDER` | `ollama` | `ollama` (free, local) · `claude` (Anthropic API) · `fake` (offline stub for tests) |
+| 🤖 `LLM_PROVIDER` | `ollama` | `ollama` (free, local) · `groq` (free API, no card) · `openai` (any OpenAI-compatible API) · `claude` (Anthropic API) · `fake` (offline stub for tests) |
+| ⚡ `GROQ_API_KEY` / `GROQ_MODELS` | | Free key from [console.groq.com/keys](https://console.groq.com/keys). Models are tried in order; when one model's free daily quota runs out, the next is used |
+| 🌐 `DEMO_MODE` | `0` | `1` for the public demo: sample lectures only, private per-visitor progress, an AI budget per visitor |
 | 🦙 `OLLAMA_MODEL` | `qwen3:4b-instruct` | Any Ollama model (`qwen2.5:3b` is faster but writes weaker quizzes) |
 | 🔌 `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
 | 💭 `OLLAMA_THINK` | *(empty)* | Set to `false` for "thinking" models such as `qwen3:4b` or `deepseek-r1` |
@@ -352,7 +369,7 @@ injected wrong citations. It runs as a silent safety net.
 - [x] **Phase 2 · Learning loop**: ✍️ true/false, fill-in, short answer · 🎯 weak-spot quizzes · 🃏 flashcards with spaced repetition + Anki export
 - [x] **Phase 3 · Quality**: 📏 larger evaluation · 🔀 hybrid search + re-ranker · ✅ citation checking
 - [ ] **Phase 4 · New inputs**: 🖼️ OCR for scanned PDFs · 🎥 lecture recordings (Whisper)
-- [ ] **Phase 5 · Online**: ☁️ live demo on Hugging Face Spaces
+- [ ] **Phase 5 · Online**: ☁️ live demo on Hugging Face Spaces + Groq's free API (code and deploy script ready; deployment pending)
 
 ## ⚠️ Limitations
 

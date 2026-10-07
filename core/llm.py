@@ -2,6 +2,8 @@
 
 Select the backend with LLM_PROVIDER in .env:
   ollama  - free, local (default). Needs `ollama serve` + `ollama pull <OLLAMA_MODEL>`.
+  groq    - free hosted API (no card). Needs GROQ_API_KEY. Rotates through GROQ_MODELS.
+  openai  - any other OpenAI-compatible API (OpenRouter, Gemini, ...): OPENAI_BASE_URL/_API_KEY/_MODELS.
   claude  - Anthropic API. Needs ANTHROPIC_API_KEY.
   fake    - deterministic offline stub, used by tests/CI. Never calls a model.
 
@@ -13,6 +15,8 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+import time
 from typing import Iterator
 
 import requests
@@ -29,6 +33,9 @@ def provider_label() -> str:
         return f"Claude ({config.CLAUDE_MODEL})"
     if config.LLM_PROVIDER == "fake":
         return "Fake (offline stub)"
+    if config.LLM_PROVIDER in COMPAT:
+        name, _, _, models = _compat_settings()
+        return f"{name} ({_active_model(models) or models[0] if models else '?'})"
     return f"Ollama ({config.OLLAMA_MODEL})"
 
 
@@ -39,6 +46,8 @@ def health() -> tuple[bool, str]:
         return True, "offline stub"
     if p == "claude":
         return (True, "API key set") if config.ANTHROPIC_API_KEY else (False, "ANTHROPIC_API_KEY is empty in .env")
+    if p in COMPAT:
+        return _compat_health()
     try:
         r = requests.get(f"{config.OLLAMA_HOST}/api/tags", timeout=2)
         names = {m["name"] for m in r.json().get("models", [])}
@@ -69,7 +78,9 @@ def generate(system: str, user: str, json_schema: dict | None = None,
         return _claude(system, user, json_schema, temperature, max_tokens)
     if p == "fake":
         return _fake(system, user, json_schema)
-    raise LLMError(f"Unknown LLM_PROVIDER '{p}'. Use ollama, claude or fake.")
+    if p in COMPAT:
+        return strip_think(_compat(system, user, json_schema, temperature, max_tokens))
+    raise LLMError(f"Unknown LLM_PROVIDER '{p}'. Use ollama, groq, openai, claude or fake.")
 
 
 def stream(system: str, user: str, temperature: float = 0.2, max_tokens: int = 2048) -> Iterator[str]:
@@ -79,6 +90,8 @@ def stream(system: str, user: str, temperature: float = 0.2, max_tokens: int = 2
         yield from _skip_think(_ollama_stream(system, user, temperature, max_tokens))
     elif p == "claude":
         yield from _claude_stream(system, user, temperature, max_tokens)
+    elif p in COMPAT:
+        yield from _skip_think(_compat_stream(system, user, temperature, max_tokens))
     else:
         yield generate(system, user, temperature=temperature, max_tokens=max_tokens)
 
@@ -141,6 +154,135 @@ def _ollama_stream(system, user, temperature, max_tokens):
             yield chunk.get("message", {}).get("content", "")
             if chunk.get("done"):
                 break
+
+
+
+# --------------------------------------------------------------------------- OpenAI-compatible (Groq, ...)
+COMPAT = ("groq", "openai")
+GROQ_URL = "https://api.groq.com/openai/v1"
+WAIT_UP_TO = 20          # seconds: a per-minute limit is waited out; anything longer moves to the next model
+_exhausted: dict[str, float] = {}   # model -> time when its quota resets
+_quota_lock = threading.Lock()
+
+
+def _compat_settings() -> tuple[str, str, str, list[str]]:
+    if config.LLM_PROVIDER == "groq":
+        return "Groq", GROQ_URL, config.GROQ_API_KEY, config.GROQ_MODELS
+    return "API", config.OPENAI_BASE_URL.rstrip("/"), config.OPENAI_API_KEY, config.OPENAI_MODELS
+
+
+def _active_model(models: list[str]) -> str | None:
+    now = time.time()
+    with _quota_lock:
+        return next((m for m in models if _exhausted.get(m, 0) <= now), None)
+
+
+def _reasoning_params(model: str) -> dict:
+    """Keep 'thinking' short: on free tiers reasoning tokens count against the token quota."""
+    if model.startswith("openai/gpt-oss"):
+        return {"reasoning_effort": "low", "include_reasoning": False}
+    if model.startswith("qwen/qwen3"):
+        return {"reasoning_effort": "none"}
+    return {}
+
+
+def _compat_payload(model, system, user, temperature, max_tokens, json_schema=None, stream_=False,
+                    json_mode_fallback: bool = False) -> dict:
+    payload = {"model": model, "temperature": temperature, "max_completion_tokens": max_tokens, "stream": stream_,
+               "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+               **_reasoning_params(model)}
+    if json_schema is not None and not json_mode_fallback:
+        # best-effort schema mode (strict mode would require every field to be required); Pydantic validates after
+        payload["response_format"] = {"type": "json_schema",
+                                      "json_schema": {"name": "output", "schema": json_schema, "strict": False}}
+    elif json_schema is not None:
+        # model without schema support: plain JSON mode, with the schema spelled out in the prompt
+        payload["response_format"] = {"type": "json_object"}
+        payload["messages"][1]["content"] += "\n\nReturn ONLY a JSON object matching this JSON schema:\n" + \
+            json.dumps(json_schema)
+    return payload
+
+
+def _compat_post(payload_for, stream_: bool = False) -> requests.Response:
+    """POST to /chat/completions, waiting out short rate limits and rotating models on long ones."""
+    name, url, key, models = _compat_settings()
+    if not key:
+        raise LLMError(f"LLM_PROVIDER={config.LLM_PROVIDER} but its API key is empty in .env")
+    tried_without_schema = False
+    while True:
+        model = _active_model(models)
+        if model is None:
+            wait = min(_exhausted.values()) - time.time()
+            raise LLMError(f"The free {name} quota is used up for every configured model. It resets in about "
+                           f"{max(1, round(wait / 60))} min. Try again later, or switch LLM_PROVIDER to ollama.")
+        payload = payload_for(model, tried_without_schema)
+        try:
+            r = requests.post(f"{url}/chat/completions", json=payload, stream=stream_, timeout=180,
+                              headers={"Authorization": f"Bearer {key}"})
+        except requests.RequestException as e:
+            raise LLMError(f"Cannot reach {name} ({url}): {e}") from e
+        if r.status_code == 429:
+            retry = float(r.headers.get("retry-after", 60) or 60)
+            if retry <= WAIT_UP_TO:
+                time.sleep(retry + 0.5)          # per-minute token/request limit: wait, then same model
+                continue
+            with _quota_lock:
+                _exhausted[model] = time.time() + retry   # daily limit: use the next model
+            continue
+        if r.status_code == 400 and "response_format" in payload and not tried_without_schema \
+                and "json_schema" in r.text:
+            tried_without_schema = True          # model without schema support: fall back to JSON mode
+            continue
+        if r.status_code == 401:
+            raise LLMError(f"{name} rejected the API key (401). Check the key in .env.")
+        if not r.ok:
+            raise LLMError(f"{name} error {r.status_code}: {r.text[:300]}")
+        return r
+
+
+def _compat(system, user, json_schema, temperature, max_tokens) -> str:
+    r = _compat_post(lambda m, fallback: _compat_payload(m, system, user, temperature, max_tokens, json_schema,
+                                                         json_mode_fallback=fallback))
+    return r.json()["choices"][0]["message"].get("content") or ""
+
+
+def _compat_stream(system, user, temperature, max_tokens) -> Iterator[str]:
+    r = _compat_post(lambda m, fallback: _compat_payload(m, system, user, temperature, max_tokens, stream_=True),
+                     stream_=True)
+    for line in r.iter_lines(decode_unicode=True):
+        if not line or not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            break
+        delta = json.loads(data)["choices"][0].get("delta", {})
+        if delta.get("content"):
+            yield delta["content"]
+
+
+_health_cache: dict[str, tuple[float, tuple[bool, str]]] = {}
+
+
+def _compat_health() -> tuple[bool, str]:
+    """Key set and API reachable (cached for a minute: the sidebar calls this on every rerun)."""
+    name, url, key, models = _compat_settings()
+    if not key:
+        return False, f"Set {'GROQ_API_KEY' if config.LLM_PROVIDER == 'groq' else 'OPENAI_API_KEY'} in .env " \
+                      f"(free key: https://console.groq.com/keys)."
+    if not models or not url:
+        return False, "Set the API URL and at least one model in .env."
+    cached = _health_cache.get(url)
+    if cached and time.time() - cached[0] < 60:
+        return cached[1]
+    try:
+        r = requests.get(f"{url}/models", headers={"Authorization": f"Bearer {key}"}, timeout=5)
+        result = (True, "connected") if r.ok else (False, f"{name} answered {r.status_code}: check the API key.")
+    except requests.RequestException:
+        result = (False, f"Cannot reach {name} at {url}.")
+    if _active_model(models) is None:
+        result = (False, f"The free {name} quota is used up for now; it resets within the day.")
+    _health_cache[url] = (time.time(), result)
+    return result
 
 
 # --------------------------------------------------------------------------- Claude

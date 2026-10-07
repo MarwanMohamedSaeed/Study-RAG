@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import closing
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -84,8 +85,17 @@ MIGRATIONS = [
 ]
 
 
+_session_db: ContextVar[str | None] = ContextVar("studyrag_session_db", default=None)
+
+
+def use_db(path: str | None) -> None:
+    """Use a different database for the current script run (the demo gives every visitor their own).
+    Streamlit runs each session's script in its own context, so this does not leak between visitors."""
+    _session_db.set(path)
+
+
 def connect(path: str | None = None) -> sqlite3.Connection:
-    path = path or config.DB_PATH
+    path = path or _session_db.get() or config.DB_PATH
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row

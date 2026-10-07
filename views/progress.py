@@ -13,7 +13,7 @@ from core.ingest import fmt_ref
 from core.llm import LLMError
 from core.mcq import generate_mixed, shuffle_options
 from core.schemas import MCQ
-from views.ui import progress_bar
+from views.ui import demo_cap, demo_guard, progress_bar
 
 REVIEW_BELOW = 0.6  # pages under 60% correct are flagged for review
 ss = st.session_state
@@ -59,8 +59,10 @@ with st.container(border=True):
         pages_txt = ", ".join(f"{fmt_ref(s['unit'] or 'page', s['page'])}" for s in weak[:6]) or "none"
         st.markdown(f"**{len(weak)} weak page{'s' if len(weak) != 1 else ''}** (below {REVIEW_BELOW:.0%}): {pages_txt}  \n"
                     ":gray[Fresh questions from those pages only.]")
-        n_new = st.slider("Questions", 5, 20, 8, key="weak_n", disabled=not weak, label_visibility="collapsed")
+        n_new = st.slider("Questions", 5, max(5, demo_cap(20)), min(8, demo_cap(20)), key="weak_n",
+                          disabled=not weak, label_visibility="collapsed")
         if st.button(f"New questions on weak pages", disabled=not weak, use_container_width=True):
+            demo_guard(2 * -(-n_new // 5) + 2)
             focus = {(s["doc_id"], s["page"]) for s in weak}
             docs = sorted({d for d, _ in focus if d in ss.doc_names})
             bar, cb = progress_bar("Writing questions on your weak pages…")

@@ -8,7 +8,7 @@ from core import cards, srs, store
 from core.export import anki_package, cards_csv
 from core.ingest import fmt_ref
 from core.llm import LLMError
-from views.ui import markdown, progress_bar
+from views.ui import demo_cap, demo_guard, markdown, progress_bar
 
 ss = st.session_state
 ss.setdefault("fc_revealed", False)
@@ -73,6 +73,8 @@ with t_add:
             st.markdown("**📖 From the glossary**  \n:gray[Term on the front, definitions in English and Arabic "
                         "on the back.]")
             if st.button("Add glossary cards", use_container_width=True):
+                if not store.latest_note("glossary", doc):
+                    demo_guard(4)   # the glossary has to be built first
                 bar, cb = progress_bar("Reading the glossary…")
                 try:
                     st.toast(f"{cards.from_glossary(doc, fname, progress=cb)} new cards from the glossary")
@@ -81,8 +83,10 @@ with t_add:
                 bar.empty()
         with a2:
             st.markdown("**✍️ From the lecture**  \n:gray[The LLM writes one-fact cards from across the lecture.]")
-            n = st.slider("Cards", 5, 40, 15, step=5, key="fc_n", label_visibility="collapsed")
+            n = st.slider("Cards", 5, max(5, demo_cap(40)), min(15, demo_cap(40)), step=5, key="fc_n",
+                          label_visibility="collapsed")
             if st.button("Generate cards", use_container_width=True):
+                demo_guard(-(-n // 6))
                 bar, cb = progress_bar("Writing cards…")
                 try:
                     st.toast(f"{cards.generate_cards(doc, fname, n, progress=cb)} new cards generated")

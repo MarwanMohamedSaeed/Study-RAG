@@ -5,9 +5,13 @@ picker) and the page menu. Each page lives in views/ and reads the shared state 
 """
 from __future__ import annotations
 
+import tempfile
+import uuid
+from pathlib import Path
+
 import streamlit as st
 
-from core import config, llm, retriever
+from core import config, llm, retriever, store
 from core.ingest import SUPPORTED_TYPES, delete_document, get_embedder, ingest_file, list_documents
 
 st.set_page_config(page_title="StudyRAG", page_icon="📚", layout="wide")
@@ -18,8 +22,26 @@ def _warm_embedder():
     return get_embedder()
 
 
+@st.cache_resource(show_spinner="Preparing the sample lectures…")
+def _preload_samples():
+    """Demo mode: index the bundled sample lectures once per server."""
+    from samples.make_benchmark_corpus import corpus
+    if not list_documents():
+        for path in corpus():
+            ingest_file(path.read_bytes(), path.name)
+    return True
+
+
 _warm_embedder()
 ss = st.session_state
+if config.DEMO_MODE:
+    _preload_samples()
+    # every visitor gets a private progress database (quiz history, flashcards) for this browser session
+    ss.setdefault("sid", uuid.uuid4().hex)
+    demo_dir = Path(tempfile.gettempdir()) / "studyrag-demo"
+    demo_dir.mkdir(exist_ok=True)
+    store.use_db(str(demo_dir / f"{ss.sid}.db"))
+    ss.setdefault("demo_used", 0)
 ss.setdefault("messages", [])        # chat history: {role, content, sources?}
 ss.setdefault("ingested", set())     # (name, size) of uploads already processed this session
 ss.setdefault("quiz", None)          # list[MCQ]
@@ -47,8 +69,15 @@ with st.sidebar:
         st.warning("The re-ranker could not be loaded, so search is using hybrid mode without it. "
                    f"({retriever.reranker_error})")
 
-    uploads = st.file_uploader("Upload lectures (PDF, PowerPoint, Word)", type=SUPPORTED_TYPES,
-                               accept_multiple_files=True)
+    if config.DEMO_MODE:
+        left = max(0, config.DEMO_ACTIONS - ss.demo_used)
+        repo = f" [Run it locally]({config.REPO_URL}) to use your own lectures." if config.REPO_URL else ""
+        st.info(f"**Live demo** with sample lectures, on a shared free API quota. You have **{left}** AI "
+                f"actions left in this session.{repo}")
+        uploads = []
+    else:
+        uploads = st.file_uploader("Upload lectures (PDF, PowerPoint, Word)", type=SUPPORTED_TYPES,
+                                   accept_multiple_files=True)
     for up in uploads or []:
         key = (up.name, up.size)
         if key in ss.ingested:
@@ -82,7 +111,7 @@ with st.sidebar:
         ss.selected_docs = list(labels)  # new session: start with everything selected
     st.multiselect("Work on", options=list(labels), format_func=labels.get,
                    placeholder="Choose document(s)", key="selected_docs")
-    if docs:
+    if docs and not config.DEMO_MODE:
         with st.expander("Manage"):
             to_del = st.selectbox("Delete a document", [None] + list(labels),
                                   format_func=lambda d: "-" if d is None else labels[d])

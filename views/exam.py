@@ -7,7 +7,7 @@ import streamlit as st
 from core import exam, store
 from core.llm import LLMError
 from core.schemas import LETTERS
-from views.ui import progress_bar
+from views.ui import demo_cap, demo_guard, progress_bar
 
 ss = st.session_state
 ss.setdefault("exam", None)   # dict while an exam is prepared / running / finished
@@ -47,11 +47,12 @@ if ex is None:
         docs = st.multiselect("Lectures", list(ss.doc_names), default=ss.selected_docs or None,
                               format_func=ss.doc_labels.get)
         c1, c2 = st.columns(2)
-        n = c1.slider("Questions", 10, 40, 20, step=5)
+        n = c1.slider("Questions", 5, max(10, demo_cap(40)), min(20, demo_cap(40)), step=5)
         minutes = c2.slider("Time limit (minutes)", 5, 90, 20, step=5)
         mix_name = st.radio("Difficulty mix", list(exam.MIXES))
         go = st.form_submit_button("Prepare exam", type="primary")
     if go:
+        demo_guard(2 * -(-n // 5) + 2)
         if not docs:
             st.warning("Choose at least one lecture.")
             st.stop()

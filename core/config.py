@@ -7,6 +7,12 @@ from dotenv import load_dotenv
 ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT / ".env")
 
+# Public demo (Hugging Face Space): sample lectures only, per-visitor progress, LLM budget per visitor.
+DEMO_MODE = os.getenv("DEMO_MODE", "0").strip().lower() in ("1", "true", "yes")
+DEMO_ACTIONS = int(os.getenv("DEMO_ACTIONS", 25))        # LLM calls one visitor may spend
+DEMO_MAX_QUESTIONS = int(os.getenv("DEMO_MAX_QUESTIONS", 10))
+REPO_URL = os.getenv("REPO_URL", "")                      # shown in the demo banner
+
 # Downloaded models (embeddings now; re-ranker / Whisper / OCR later) live inside the project
 # folder instead of ~/.cache, which sits on a nearly full C: drive on the dev machine.
 # Must be set before sentence-transformers / huggingface_hub are imported.
@@ -19,6 +25,15 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:4b-instruct")
 # Only sent for models that support it (qwen3, deepseek-r1...). Empty = don't send the flag.
 _think = os.getenv("OLLAMA_THINK", "").strip().lower()
 OLLAMA_THINK = None if _think == "" else _think in ("1", "true", "yes")
+# --- OpenAI-compatible APIs (LLM_PROVIDER=groq, or LLM_PROVIDER=openai for any other compatible service).
+# Several models can be listed: free tiers have per-model daily quotas, so when one model's quota runs out
+# the next one is used.
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODELS = [m.strip() for m in os.getenv(
+    "GROQ_MODELS", "openai/gpt-oss-120b,qwen/qwen3.8-27b,openai/gpt-oss-20b").split(",") if m.strip()]
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "")          # e.g. https://openrouter.ai/api/v1
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_MODELS = [m.strip() for m in os.getenv("OPENAI_MODELS", "").split(",") if m.strip()]
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 
