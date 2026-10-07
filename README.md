@@ -101,6 +101,8 @@ streamlit run app.py
 
 🌐 Open **http://localhost:8501** and upload a lecture (PDF, PowerPoint or Word). You can start with the included bilingual sample, [`samples/networks_lecture.pdf`](samples/networks_lecture.pdf).
 
+> 🖱️ **On Windows, after the first setup, just double-click `run.bat`.** It starts Ollama if it isn't running and opens the app in your browser. Close its window to stop StudyRAG.
+
 > ℹ️ The first launch downloads the embedding model (~470 MB). After that, everything works **offline**.
 
 ### 🐳 Docker
